@@ -75,7 +75,8 @@ fi
 #
 
 #APP_NAME="bam-client"
-BASE_DIR="/opt/valig-builds"
+#BASE_DIR="/opt/valig-builds"
+BASE_DIR="/home/sol/git/build-tools/work"
 
 ARTIFACT_ROOT="$BASE_DIR/$APP_NAME/artifacts"
 TARBALL="$ARTIFACT_ROOT/$APP_NAME-$TAG.tar.gz"
