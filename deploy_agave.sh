@@ -9,7 +9,8 @@ if [[ "$CLUSTER" == "list" ]]; then
   echo "===================================="
   echo
 
-  BASE_DIR="/opt/valig-builds"
+  #BASE_DIR="/opt/valig-builds"
+  BASE_DIR="/home/sol/git/build-tools/work"
   found_any=false
 
   # Check each package type
