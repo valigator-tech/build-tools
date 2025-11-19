@@ -3,7 +3,7 @@ set -euo pipefail
 
 VERSION="${1:-}"
 
-BASE_DIR="/home/sol/releases/"
+BASE_DIR="/home/sol/releases"
 
 if [[ -z "$VERSION" ]]; then
   echo "Usage: $0 <version>" >&2
@@ -16,13 +16,11 @@ if [[ "$VERSION" == "list" ]]; then
   echo "===================================="
   echo
 
-  #BASE_DIR="/opt/valig-builds"
-  #BASE_DIR="/home/sol/releases/"
   found_any=false
 
   # Check each package type
   for app_name in agave bam-client jito-solana; do
-    releases_dir="$BASE_DIR/$app_name/releases"
+    releases_dir="$BASE_DIR/$app_name"
 
     if [[ -d "$releases_dir" ]]; then
       # Find all version directories (exclude the 'active' symlink)
@@ -67,8 +65,7 @@ else
   exit 1
 fi
 
-#BASE_DIR="/opt/valig-builds"
-ROOT="$BASE_DIR/$APP_NAME/releases"
+ROOT="$BASE_DIR/$APP_NAME"
 ACTIVE="$BASE_DIR/active"
 TARGET="$ROOT/$VERSION"
 
