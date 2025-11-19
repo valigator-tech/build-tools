@@ -3,6 +3,8 @@ set -euo pipefail
 
 VERSION="${1:-}"
 
+BASE_DIR="/home/sol/releases/"
+
 if [[ -z "$VERSION" ]]; then
   echo "Usage: $0 <version>" >&2
   echo "  version: e.g. v3.0.10-bam_patch1 | v3.0.10-jito | v3.0.10" >&2
@@ -15,7 +17,7 @@ if [[ "$VERSION" == "list" ]]; then
   echo
 
   #BASE_DIR="/opt/valig-builds"
-  BASE_DIR="/home/sol/releases/"
+  #BASE_DIR="/home/sol/releases/"
   found_any=false
 
   # Check each package type
@@ -65,7 +67,7 @@ else
   exit 1
 fi
 
-BASE_DIR="/opt/valig-builds"
+#BASE_DIR="/opt/valig-builds"
 ROOT="$BASE_DIR/$APP_NAME/releases"
 ACTIVE="$BASE_DIR/active"
 TARGET="$ROOT/$VERSION"
