@@ -55,11 +55,15 @@ echo ">>> Fetching source for tag $TAG"
 if [ -d "$SRC_DIR/.git" ]; then
   echo ">>> Repo exists, updating"
   cd "$SRC_DIR"
+  # Fix Git ownership issue on shared/mounted directories
+  git config --global --add safe.directory "$SRC_DIR"
   git fetch --tags origin
 else
   echo ">>> Cloning fresh repo"
   git clone --recurse-submodules "$REPO_URL" "$SRC_DIR"
   cd "$SRC_DIR"
+  # Fix Git ownership issue on shared/mounted directories
+  git config --global --add safe.directory "$SRC_DIR"
 fi
 
 # Clean working tree to avoid cruft
