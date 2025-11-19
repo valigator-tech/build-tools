@@ -14,7 +14,8 @@ if [[ "$VERSION" == "list" ]]; then
   echo "===================================="
   echo
 
-  BASE_DIR="/opt/valig-builds"
+  #BASE_DIR="/opt/valig-builds"
+  BASE_DIR="/home/sol/releases/"
   found_any=false
 
   # Check each package type
