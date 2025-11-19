@@ -163,7 +163,7 @@ for host in "${HOSTS[@]}"; do
 
   ssh "$target" "cd '$REMOTE_RELEASE_ROOT' && \
                  tar xzf /tmp/$APP_NAME-$TAG.tar.gz && \
-                 rm /tmp/$APP_NAME-$TAG.tar.gz'"
+                 rm /tmp/$APP_NAME-$TAG.tar.gz"
 
   echo
 done
