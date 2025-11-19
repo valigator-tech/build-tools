@@ -134,7 +134,8 @@ case "$REPLY" in
   [yY]|[yY][eE][sS])
     echo "Updating active symlink..."
     ln -sfn "$TARGET" "$ACTIVE"
-    echo "Done. active -> $(readlink -f "$ACTIVE")"
+    echo "Done."
+    echo "  $ACTIVE -> $(readlink -f "$ACTIVE")"
     ;;
   *)
     echo "Aborted. No changes made."
