@@ -13,6 +13,17 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 if [[ "$VERSION" == "list" ]]; then
+  # Check for current active version
+  ACTIVE="$BASE_DIR/solana-validator-failover"
+  CURRENT_VERSION=""
+  if [[ -L "$ACTIVE" ]]; then
+    CURRENT_TARGET="$(readlink -f "$ACTIVE" || true)"
+    # Extract version from path like /home/sol/releases/svf/v0.1.10/bin/solana-validator-failover
+    if [[ "$CURRENT_TARGET" =~ /svf/([^/]+)/ ]]; then
+      CURRENT_VERSION="${BASH_REMATCH[1]}"
+    fi
+  fi
+
   echo "Available SVF versions for activation:"
   echo "======================================"
   echo
@@ -34,7 +45,11 @@ if [[ "$VERSION" == "list" ]]; then
     if [[ ${#versions[@]} -gt 0 ]]; then
       echo "[$APP_NAME]"
       for version in "${versions[@]}"; do
-        echo "  - $version"
+        if [[ -n "$CURRENT_VERSION" && "$version" == "$CURRENT_VERSION" ]]; then
+          echo "  - $version (active)"
+        else
+          echo "  - $version"
+        fi
       done
       echo
     else

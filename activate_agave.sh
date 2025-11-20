@@ -12,6 +12,17 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 if [[ "$VERSION" == "list" ]]; then
+  # Check for current active version
+  ACTIVE="$BASE_DIR/active"
+  CURRENT_VERSION=""
+  if [[ -L "$ACTIVE" || -d "$ACTIVE" ]]; then
+    CURRENT_TARGET="$(readlink -f "$ACTIVE" || true)"
+    # Extract version from path like /home/sol/releases/agave/v3.0.10 or /home/sol/releases/bam-client/v3.0.10-bam_patch1
+    if [[ "$CURRENT_TARGET" =~ /(agave|bam-client|jito-solana)/([^/]+)$ ]]; then
+      CURRENT_VERSION="${BASH_REMATCH[2]}"
+    fi
+  fi
+
   echo "Available versions for activation:"
   echo "===================================="
   echo
@@ -38,7 +49,11 @@ if [[ "$VERSION" == "list" ]]; then
         found_any=true
         echo "[$app_name]"
         for version in "${versions[@]}"; do
-          echo "  - $version"
+          if [[ -n "$CURRENT_VERSION" && "$version" == "$CURRENT_VERSION" ]]; then
+            echo "  - $version (active)"
+          else
+            echo "  - $version"
+          fi
         done
         echo
       fi
