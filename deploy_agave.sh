@@ -124,9 +124,23 @@ echo ">>> Deploying $APP_NAME tag $TAG to cluster $CLUSTER: ${HOSTS[*]}"
 echo ">>> Using artifact: $TARBALL"
 echo
 
-# Check if version already exists on any host before deploying
+# Ensure base directory structure exists on all hosts first
+echo "Ensuring base directory structure exists on remote hosts..."
+for host in "${HOSTS[@]}"; do
+  target="$host"
+  if [[ -n "$SSH_USER" ]]; then
+    target="$SSH_USER@$host"
+  fi
+
+  ssh "$target" "mkdir -p '$REMOTE_RELEASE_ROOT'" || {
+    echo "ERROR: Failed to create directory on $target" >&2
+    exit 1
+  }
+done
+
+# Check which hosts already have the version and build deployment list
 echo "Checking if version already exists on remote hosts..."
-version_exists=false
+HOSTS_TO_DEPLOY=()
 for host in "${HOSTS[@]}"; do
   target="$host"
   if [[ -n "$SSH_USER" ]]; then
@@ -134,30 +148,30 @@ for host in "${HOSTS[@]}"; do
   fi
 
   if ssh "$target" "test -d '$REMOTE_RELEASE_ROOT/$TAG'" 2>/dev/null; then
-    echo "ERROR: Version $TAG already exists on $target at $REMOTE_RELEASE_ROOT/$TAG" >&2
-    version_exists=true
+    echo "  ✗ $target: Version $TAG already exists (skipping)"
+  else
+    echo "  ✓ $target: Version $TAG not found (will deploy)"
+    HOSTS_TO_DEPLOY+=("$host")
   fi
 done
 
-if [[ "$version_exists" == true ]]; then
-  echo >&2
-  echo "ERROR: Deployment aborted to prevent overwriting existing version" >&2
-  echo "       Remove the existing version on all hosts first, or use a different tag" >&2
-  exit 1
+if [[ ${#HOSTS_TO_DEPLOY[@]} -eq 0 ]]; then
+  echo
+  echo "All hosts already have version $TAG. Nothing to deploy."
+  exit 0
 fi
 
-echo "Version check passed. Proceeding with deployment..."
+echo
+echo "Deploying to ${#HOSTS_TO_DEPLOY[@]} host(s)..."
 echo
 
-for host in "${HOSTS[@]}"; do
+for host in "${HOSTS_TO_DEPLOY[@]}"; do
   target="$host"
   if [[ -n "$SSH_USER" ]]; then
     target="$SSH_USER@$host"
   fi
 
   echo "==== Host: $target ===="
-
-  ssh "$target" "mkdir -p '$REMOTE_RELEASE_ROOT'"
 
   scp "$TARBALL" "$target:/tmp/"
 
