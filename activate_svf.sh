@@ -49,26 +49,28 @@ fi
 
 ROOT="$BASE_DIR/$APP_NAME"
 ACTIVE="$BASE_DIR/solana-validator-failover"
-TARGET="$ROOT/$VERSION"
+VERSION_DIR="$ROOT/$VERSION"
+TARGET_BINARY="$VERSION_DIR/bin/solana-validator-failover"
 
 # ---- Show current active version (if any) ----
 echo "=== Current active SVF ==="
 
 CURRENT_TARGET=""
-if [[ -L "$ACTIVE" || -d "$ACTIVE" ]]; then
+if [[ -L "$ACTIVE" ]]; then
   CURRENT_TARGET="$(readlink -f "$ACTIVE" || true)"
   echo "solana-validator-failover -> ${CURRENT_TARGET:-$ACTIVE}"
 
-  CURRENT_SVF_BIN="$ACTIVE/bin/solana-validator-failover"
-  if [[ -x "$CURRENT_SVF_BIN" ]]; then
+  if [[ -x "$ACTIVE" ]]; then
     echo
-    echo "Current: $CURRENT_SVF_BIN --version"
+    echo "Current: $ACTIVE --version"
     echo "--------------------------------------"
-    "$CURRENT_SVF_BIN" --version || echo "(failed to run current solana-validator-failover --version)"
+    "$ACTIVE" --version || echo "(failed to run current solana-validator-failover --version)"
     echo "--------------------------------------"
   else
-    echo "WARNING: $CURRENT_SVF_BIN not found or not executable"
+    echo "WARNING: $ACTIVE not found or not executable"
   fi
+elif [[ -e "$ACTIVE" ]]; then
+  echo "WARNING: $ACTIVE exists but is not a symlink"
 else
   echo "No active symlink found at $ACTIVE"
 fi
@@ -76,23 +78,22 @@ fi
 echo
 
 # ---- Inspect requested version without changing anything ----
-if [[ ! -d "$TARGET" ]]; then
-  echo "ERROR: version directory not found: $TARGET" >&2
+if [[ ! -d "$VERSION_DIR" ]]; then
+  echo "ERROR: version directory not found: $VERSION_DIR" >&2
   exit 1
 fi
 
-NEW_SVF_BIN="$TARGET/bin/solana-validator-failover"
-if [[ ! -x "$NEW_SVF_BIN" ]]; then
-  echo "ERROR: $NEW_SVF_BIN not found or not executable" >&2
+if [[ ! -x "$TARGET_BINARY" ]]; then
+  echo "ERROR: $TARGET_BINARY not found or not executable" >&2
   exit 1
 fi
 
 echo "=== Candidate version to activate ==="
-echo "Target directory: $TARGET"
+echo "Target binary: $TARGET_BINARY"
 echo
-echo "Checking: $NEW_SVF_BIN --version"
+echo "Checking: $TARGET_BINARY --version"
 echo "--------------------------------------"
-if ! NEW_VERSION_OUTPUT="$("$NEW_SVF_BIN" --version 2>&1)"; then
+if ! NEW_VERSION_OUTPUT="$("$TARGET_BINARY" --version 2>&1)"; then
   echo "ERROR: solana-validator-failover --version failed for candidate:" >&2
   echo "$NEW_VERSION_OUTPUT" >&2
   echo "No changes made."
@@ -104,7 +105,7 @@ echo "--------------------------------------"
 echo
 
 # ---- Check if already active ----
-if [[ -n "$CURRENT_TARGET" && "$CURRENT_TARGET" == "$TARGET" ]]; then
+if [[ -n "$CURRENT_TARGET" && "$CURRENT_TARGET" == "$TARGET_BINARY" ]]; then
   echo "ERROR: Version $VERSION is already active" >&2
   echo "       No changes needed."
   exit 1
@@ -115,7 +116,7 @@ read -r -p "Switch active SVF to $VERSION? [y/N] " REPLY
 case "$REPLY" in
   [yY]|[yY][eE][sS])
     echo "Updating active symlink..."
-    ln -sfn "$TARGET" "$ACTIVE"
+    ln -sfn "$TARGET_BINARY" "$ACTIVE"
     echo "Done."
     echo "  $ACTIVE -> $(readlink -f "$ACTIVE")"
     ;;
