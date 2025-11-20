@@ -124,8 +124,10 @@ for host in "${HOSTS[@]}"; do
   fi
 
   if ssh "$target" "test -d '$REMOTE_RELEASE_ROOT/$TAG'" 2>/dev/null; then
-    echo "ERROR: Version $TAG already exists on $target at $REMOTE_RELEASE_ROOT/$TAG" >&2
+    echo "  ✗ $target: Version $TAG already exists" >&2
     version_exists=true
+  else
+    echo "  ✓ $target: Version $TAG not found (ready for deployment)"
   fi
 done
 
