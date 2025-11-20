@@ -100,6 +100,20 @@ echo ">>> Deploying $APP_NAME tag $TAG to cluster $CLUSTER: ${HOSTS[*]}"
 echo ">>> Using artifact: $TARBALL"
 echo
 
+# Ensure base directory structure exists on all hosts first
+echo "Ensuring base directory structure exists on remote hosts..."
+for host in "${HOSTS[@]}"; do
+  target="$host"
+  if [[ -n "$SSH_USER" ]]; then
+    target="$SSH_USER@$host"
+  fi
+
+  ssh "$target" "mkdir -p '$REMOTE_RELEASE_ROOT'" || {
+    echo "ERROR: Failed to create directory on $target" >&2
+    exit 1
+  }
+done
+
 # Check if version already exists on any host before deploying
 echo "Checking if version already exists on remote hosts..."
 version_exists=false
@@ -132,8 +146,6 @@ for host in "${HOSTS[@]}"; do
   fi
 
   echo "==== Host: $target ===="
-
-  ssh "$target" "mkdir -p '$REMOTE_RELEASE_ROOT'"
 
   scp "$TARBALL" "$target:/tmp/"
 
