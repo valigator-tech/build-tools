@@ -80,10 +80,25 @@ cd "$DOWNLOAD_DIR"
 
 # Download binary and checksum
 echo ">>> Downloading binary..."
-curl -L -o "$BINARY_FILENAME" "$BINARY_URL"
+if ! curl -f -L -o "$BINARY_FILENAME" "$BINARY_URL"; then
+  echo "ERROR: Failed to download binary from $BINARY_URL" >&2
+  exit 1
+fi
+
+# Verify the downloaded file is actually gzip
+if ! file "$BINARY_FILENAME" | grep -q "gzip compressed"; then
+  echo "ERROR: Downloaded file is not in gzip format" >&2
+  echo "File type: $(file "$BINARY_FILENAME")" >&2
+  echo "First 200 bytes:" >&2
+  head -c 200 "$BINARY_FILENAME" >&2
+  exit 1
+fi
 
 echo ">>> Downloading checksum..."
-curl -L -o "$CHECKSUM_FILENAME" "$CHECKSUM_URL"
+if ! curl -f -L -o "$CHECKSUM_FILENAME" "$CHECKSUM_URL"; then
+  echo "ERROR: Failed to download checksum from $CHECKSUM_URL" >&2
+  exit 1
+fi
 
 # Extract the binary first
 echo ">>> Extracting binary..."
