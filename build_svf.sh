@@ -28,9 +28,47 @@ mkdir -p "$RELEASE_ROOT" "$ARTIFACT_ROOT" "$DOWNLOAD_DIR"
 # Strip 'v' prefix if present for download URL construction
 VERSION="${TAG#v}"
 
-# Construct download URLs
+# Check if the release exists and get available assets
+echo ">>> Checking if release $TAG exists..."
+RELEASE_INFO=$(curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${TAG}")
+
+if echo "$RELEASE_INFO" | grep -q '"message": "Not Found"'; then
+  echo "ERROR: Release $TAG not found in repository $GITHUB_REPO" >&2
+  echo "" >&2
+  echo "Available releases:" >&2
+  curl -s "https://api.github.com/repos/${GITHUB_REPO}/releases" | grep '"tag_name"' | cut -d'"' -f4 | head -10 >&2
+  exit 1
+fi
+
+echo "✓ Release $TAG exists"
+
+# Construct expected filenames
 BINARY_FILENAME="solana-validator-failover-${VERSION}-linux-amd64.gz"
 CHECKSUM_FILENAME="solana-validator-failover-${VERSION}-linux-amd64.sha256"
+
+# Verify that the specific linux-amd64 assets exist in this release
+echo ">>> Verifying required assets exist..."
+ASSETS=$(echo "$RELEASE_INFO" | grep '"name"' | cut -d'"' -f4)
+
+if ! echo "$ASSETS" | grep -q "^${BINARY_FILENAME}$"; then
+  echo "ERROR: Binary asset not found: $BINARY_FILENAME" >&2
+  echo "" >&2
+  echo "Available assets for $TAG:" >&2
+  echo "$ASSETS" >&2
+  exit 1
+fi
+
+if ! echo "$ASSETS" | grep -q "^${CHECKSUM_FILENAME}$"; then
+  echo "ERROR: Checksum asset not found: $CHECKSUM_FILENAME" >&2
+  echo "" >&2
+  echo "Available assets for $TAG:" >&2
+  echo "$ASSETS" >&2
+  exit 1
+fi
+
+echo "✓ Required assets found: $BINARY_FILENAME, $CHECKSUM_FILENAME"
+
+# Construct download URLs
 BINARY_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/${BINARY_FILENAME}"
 CHECKSUM_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/${CHECKSUM_FILENAME}"
 
@@ -47,16 +85,7 @@ curl -L -o "$BINARY_FILENAME" "$BINARY_URL"
 echo ">>> Downloading checksum..."
 curl -L -o "$CHECKSUM_FILENAME" "$CHECKSUM_URL"
 
-# Verify checksum
-echo ">>> Verifying checksum..."
-if sha256sum -c "$CHECKSUM_FILENAME"; then
-  echo "✓ Checksum verification passed"
-else
-  echo "ERROR: Checksum verification failed!" >&2
-  exit 1
-fi
-
-# Extract the binary
+# Extract the binary first
 echo ">>> Extracting binary..."
 gunzip -f "$BINARY_FILENAME"
 
@@ -64,6 +93,22 @@ EXTRACTED_BINARY="solana-validator-failover-${VERSION}-linux-amd64"
 
 if [[ ! -f "$EXTRACTED_BINARY" ]]; then
   echo "ERROR: Expected binary not found: $EXTRACTED_BINARY" >&2
+  exit 1
+fi
+
+# Verify checksum (checksum file references the extracted binary)
+echo ">>> Verifying checksum..."
+EXPECTED_HASH=$(cut -d' ' -f1 "$CHECKSUM_FILENAME")
+ACTUAL_HASH=$(sha256sum "$EXTRACTED_BINARY" | cut -d' ' -f1)
+
+if [[ "$EXPECTED_HASH" == "$ACTUAL_HASH" ]]; then
+  echo "✓ Checksum verification passed"
+  echo "  Expected: $EXPECTED_HASH"
+  echo "  Actual:   $ACTUAL_HASH"
+else
+  echo "ERROR: Checksum verification failed!" >&2
+  echo "  Expected: $EXPECTED_HASH" >&2
+  echo "  Actual:   $ACTUAL_HASH" >&2
   exit 1
 fi
 
