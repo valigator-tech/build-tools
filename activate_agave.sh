@@ -73,8 +73,16 @@ TARGET="$ROOT/$VERSION"
 echo "=== Current active $APP_NAME ==="
 
 CURRENT_TARGET=""
+CURRENT_VERSION=""
 if [[ -L "$ACTIVE" || -d "$ACTIVE" ]]; then
   CURRENT_TARGET="$(readlink -f "$ACTIVE" || true)"
+
+  # Extract version from path like /home/sol/releases/agave/v3.0.10 or /home/sol/releases/bam-client/v3.0.10-bam_patch1
+  if [[ "$CURRENT_TARGET" =~ /(agave|bam-client|jito-solana)/([^/]+)$ ]]; then
+    CURRENT_VERSION="${BASH_REMATCH[2]}"
+    echo "Active version: $CURRENT_VERSION"
+  fi
+
   echo "active -> ${CURRENT_TARGET:-$ACTIVE}"
 
   CURRENT_SOLANA_BIN="$ACTIVE/bin/solana"
@@ -88,7 +96,7 @@ if [[ -L "$ACTIVE" || -d "$ACTIVE" ]]; then
     echo "WARNING: $CURRENT_SOLANA_BIN not found or not executable"
   fi
 else
-  echo "No active symlink found at $ACTIVE"
+  echo "No active version"
 fi
 
 echo

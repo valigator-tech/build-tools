@@ -56,8 +56,16 @@ TARGET_BINARY="$VERSION_DIR/bin/solana-validator-failover"
 echo "=== Current active SVF ==="
 
 CURRENT_TARGET=""
+CURRENT_VERSION=""
 if [[ -L "$ACTIVE" ]]; then
   CURRENT_TARGET="$(readlink -f "$ACTIVE" || true)"
+
+  # Extract version from path like /home/sol/releases/svf/v0.1.10/bin/solana-validator-failover
+  if [[ "$CURRENT_TARGET" =~ /svf/([^/]+)/ ]]; then
+    CURRENT_VERSION="${BASH_REMATCH[1]}"
+    echo "Active version: $CURRENT_VERSION"
+  fi
+
   echo "solana-validator-failover -> ${CURRENT_TARGET:-$ACTIVE}"
 
   if [[ -x "$ACTIVE" ]]; then
@@ -72,7 +80,7 @@ if [[ -L "$ACTIVE" ]]; then
 elif [[ -e "$ACTIVE" ]]; then
   echo "WARNING: $ACTIVE exists but is not a symlink"
 else
-  echo "No active symlink found at $ACTIVE"
+  echo "No active version"
 fi
 
 echo
