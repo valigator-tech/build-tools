@@ -44,7 +44,7 @@ echo "✓ Release $TAG exists"
 
 # Construct expected filenames
 BINARY_FILENAME="solana-validator-ha-${VERSION}-linux-amd64.gz"
-CHECKSUM_FILENAME="solana-validator-ha-${VERSION}-linux-amd64.sha256"
+CHECKSUM_FILENAME="solana-validator-ha-${VERSION}-linux-amd64.gz.sha256"
 
 # Verify that the specific linux-amd64 assets exist in this release
 echo ">>> Verifying required assets exist..."
@@ -100,21 +100,10 @@ if ! curl -f -L -o "$CHECKSUM_FILENAME" "$CHECKSUM_URL"; then
   exit 1
 fi
 
-# Extract the binary first
-echo ">>> Extracting binary..."
-gunzip -f "$BINARY_FILENAME"
-
-EXTRACTED_BINARY="solana-validator-ha-${VERSION}-linux-amd64"
-
-if [[ ! -f "$EXTRACTED_BINARY" ]]; then
-  echo "ERROR: Expected binary not found: $EXTRACTED_BINARY" >&2
-  exit 1
-fi
-
-# Verify checksum (checksum file references the extracted binary)
+# Verify checksum of the compressed file before extracting
 echo ">>> Verifying checksum..."
 EXPECTED_HASH=$(cut -d' ' -f1 "$CHECKSUM_FILENAME")
-ACTUAL_HASH=$(sha256sum "$EXTRACTED_BINARY" | cut -d' ' -f1)
+ACTUAL_HASH=$(sha256sum "$BINARY_FILENAME" | cut -d' ' -f1)
 
 if [[ "$EXPECTED_HASH" == "$ACTUAL_HASH" ]]; then
   echo "✓ Checksum verification passed"
@@ -124,6 +113,17 @@ else
   echo "ERROR: Checksum verification failed!" >&2
   echo "  Expected: $EXPECTED_HASH" >&2
   echo "  Actual:   $ACTUAL_HASH" >&2
+  exit 1
+fi
+
+# Extract the binary after checksum verification
+echo ">>> Extracting binary..."
+gunzip -f "$BINARY_FILENAME"
+
+EXTRACTED_BINARY="solana-validator-ha-${VERSION}-linux-amd64"
+
+if [[ ! -f "$EXTRACTED_BINARY" ]]; then
+  echo "ERROR: Expected binary not found: $EXTRACTED_BINARY" >&2
   exit 1
 fi
 
