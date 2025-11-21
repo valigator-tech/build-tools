@@ -142,6 +142,61 @@ case "$REPLY" in
     ln -sfn "$TARGET_BINARY" "$ACTIVE"
     echo "Done."
     echo "  $ACTIVE -> $(readlink -f "$ACTIVE")"
+    echo
+
+    # ---- Check /usr/local/bin/solana-validator-failover symlink ----
+    SYSTEM_BIN_LINK="/usr/local/bin/solana-validator-failover"
+    SYSTEM_BIN_SVF="/usr/local/bin/svf"
+
+    echo "=== Checking system-wide symlinks ==="
+
+    # Check solana-validator-failover
+    if [[ -L "$SYSTEM_BIN_LINK" ]]; then
+      SYSTEM_TARGET="$(readlink "$SYSTEM_BIN_LINK")"
+      if [[ "$SYSTEM_TARGET" == "$ACTIVE" ]]; then
+        echo "✓ $SYSTEM_BIN_LINK -> $ACTIVE (correct)"
+      else
+        echo "WARNING: $SYSTEM_BIN_LINK is a symlink but points to wrong target" >&2
+        echo "  Current: $SYSTEM_BIN_LINK -> $SYSTEM_TARGET" >&2
+        echo "  Expected: $SYSTEM_BIN_LINK -> $ACTIVE" >&2
+        echo "" >&2
+        echo "To fix, run these commands as root:" >&2
+        echo "  ln -sf $ACTIVE $SYSTEM_BIN_LINK" >&2
+        echo "  ln -sf $ACTIVE $SYSTEM_BIN_SVF" >&2
+      fi
+    elif [[ -e "$SYSTEM_BIN_LINK" ]]; then
+      echo "ERROR: $SYSTEM_BIN_LINK exists but is not a symlink" >&2
+      echo "  It should be a symlink pointing to: $ACTIVE" >&2
+      echo "" >&2
+      echo "To fix, run these commands as root:" >&2
+      echo "  ln -sf $ACTIVE $SYSTEM_BIN_LINK" >&2
+      echo "  ln -sf $ACTIVE $SYSTEM_BIN_SVF" >&2
+    else
+      echo "WARNING: $SYSTEM_BIN_LINK does not exist" >&2
+      echo "  It should be a symlink pointing to: $ACTIVE" >&2
+      echo "" >&2
+      echo "To fix, run these commands as root:" >&2
+      echo "  ln -sf $ACTIVE $SYSTEM_BIN_LINK" >&2
+      echo "  ln -sf $ACTIVE $SYSTEM_BIN_SVF" >&2
+    fi
+
+    # Check svf alias
+    if [[ -L "$SYSTEM_BIN_SVF" ]]; then
+      SYSTEM_SVF_TARGET="$(readlink "$SYSTEM_BIN_SVF")"
+      if [[ "$SYSTEM_SVF_TARGET" == "$ACTIVE" ]]; then
+        echo "✓ $SYSTEM_BIN_SVF -> $ACTIVE (correct)"
+      else
+        echo "WARNING: $SYSTEM_BIN_SVF is a symlink but points to wrong target" >&2
+        echo "  Current: $SYSTEM_BIN_SVF -> $SYSTEM_SVF_TARGET" >&2
+        echo "  Expected: $SYSTEM_BIN_SVF -> $ACTIVE" >&2
+      fi
+    elif [[ -e "$SYSTEM_BIN_SVF" ]]; then
+      echo "WARNING: $SYSTEM_BIN_SVF exists but is not a symlink" >&2
+      echo "  It should be a symlink pointing to: $ACTIVE" >&2
+    else
+      echo "WARNING: $SYSTEM_BIN_SVF does not exist" >&2
+      echo "  It should be a symlink pointing to: $ACTIVE" >&2
+    fi
     ;;
   *)
     echo "Aborted. No changes made."
