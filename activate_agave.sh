@@ -11,6 +11,19 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
+if [[ "$VERSION" == "version" ]]; then
+  # Print only the active version (or nothing if no active version)
+  ACTIVE="$BASE_DIR/active"
+  if [[ -L "$ACTIVE" || -d "$ACTIVE" ]]; then
+    CURRENT_TARGET="$(readlink -f "$ACTIVE" || true)"
+    # Extract version from path like /home/sol/releases/agave/v3.0.10 or /home/sol/releases/bam-client/v3.0.10-bam_patch1
+    if [[ "$CURRENT_TARGET" =~ /(agave|bam-client|jito-solana)/([^/]+)$ ]]; then
+      echo "${BASH_REMATCH[2]}"
+    fi
+  fi
+  exit 0
+fi
+
 if [[ "$VERSION" == "list" ]]; then
   # Check for current active version
   ACTIVE="$BASE_DIR/active"

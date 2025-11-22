@@ -12,6 +12,19 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
+if [[ "$VERSION" == "version" ]]; then
+  # Print only the active version (or nothing if no active version)
+  ACTIVE="$BASE_DIR/solana-validator-failover"
+  if [[ -L "$ACTIVE" ]]; then
+    CURRENT_TARGET="$(readlink -f "$ACTIVE" || true)"
+    # Extract version from path like /home/sol/releases/svf/v0.1.10/bin/solana-validator-failover
+    if [[ "$CURRENT_TARGET" =~ /svf/([^/]+)/ ]]; then
+      echo "${BASH_REMATCH[1]}"
+    fi
+  fi
+  exit 0
+fi
+
 if [[ "$VERSION" == "list" ]]; then
   # Check for current active version
   ACTIVE="$BASE_DIR/solana-validator-failover"
