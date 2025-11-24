@@ -51,6 +51,14 @@ SRC_DIR="$SRC_BASE/$APP_NAME"
 
 mkdir -p "$SRC_BASE" "$RELEASE_ROOT" "$ARTIFACT_ROOT"
 
+# Check if this version is already built
+ARTIFACT_PATH="$ARTIFACT_ROOT/$APP_NAME-$TAG.tar.gz"
+if [ -f "$ARTIFACT_PATH" ]; then
+  echo "ERROR: Version $TAG already exists at $ARTIFACT_PATH" >&2
+  echo "If you want to rebuild, delete the artifact first." >&2
+  exit 1
+fi
+
 echo ">>> Fetching source for tag $TAG"
 
 if [ -d "$SRC_DIR/.git" ]; then

@@ -25,6 +25,14 @@ DOWNLOAD_DIR="$BASE_DIR/$APP_NAME/downloads"
 
 mkdir -p "$RELEASE_ROOT" "$ARTIFACT_ROOT" "$DOWNLOAD_DIR"
 
+# Check if this version is already built
+ARTIFACT_PATH="$ARTIFACT_ROOT/$APP_NAME-$TAG.tar.gz"
+if [ -f "$ARTIFACT_PATH" ]; then
+  echo "ERROR: Version $TAG already exists at $ARTIFACT_PATH" >&2
+  echo "If you want to rebuild, delete the artifact first." >&2
+  exit 1
+fi
+
 # Strip 'v' prefix if present for download URL construction
 VERSION="${TAG#v}"
 
