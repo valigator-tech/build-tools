@@ -22,6 +22,11 @@ elif [[ "$TAG" == *"jito"* ]]; then
   APP_NAME="jito-solana"
   REPO_URL="https://github.com/jito-foundation/jito-solana.git"
 
+elif [[ "$TAG" == *"harmonic"* ]]; then
+  echo "Building a Harmonic client."
+  APP_NAME="harmonic"
+  REPO_URL="git@github.com:meijilabs/proposer.git"
+
 elif [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "Building a vanilla Agave client."
   APP_NAME="agave"

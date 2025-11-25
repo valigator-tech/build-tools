@@ -7,7 +7,7 @@ BASE_DIR="/home/sol/releases"
 
 if [[ -z "$VERSION" ]]; then
   echo "Usage: $0 <version>" >&2
-  echo "  version: e.g. v3.0.10-bam_patch1 | v3.0.10-jito | v3.0.10" >&2
+  echo "  version: e.g. v3.0.10-bam_patch1 | v3.0.10-jito | v3.0.10-harmonic | v3.0.10" >&2
   exit 1
 fi
 
@@ -17,7 +17,7 @@ if [[ "$VERSION" == "type" ]]; then
   if [[ -L "$ACTIVE" || -d "$ACTIVE" ]]; then
     CURRENT_TARGET="$(readlink -f "$ACTIVE" || true)"
     # Extract package type from path like /home/sol/releases/agave/v3.0.10 or /home/sol/releases/bam-client/v3.0.10-bam_patch1
-    if [[ "$CURRENT_TARGET" =~ /(agave|bam-client|jito-solana)/([^/]+)$ ]]; then
+    if [[ "$CURRENT_TARGET" =~ /(agave|bam-client|jito-solana|harmonic)/([^/]+)$ ]]; then
       echo "${BASH_REMATCH[1]}"
     fi
   fi
@@ -30,7 +30,7 @@ if [[ "$VERSION" == "version" ]]; then
   if [[ -L "$ACTIVE" || -d "$ACTIVE" ]]; then
     CURRENT_TARGET="$(readlink -f "$ACTIVE" || true)"
     # Extract version from path like /home/sol/releases/agave/v3.0.10 or /home/sol/releases/bam-client/v3.0.10-bam_patch1
-    if [[ "$CURRENT_TARGET" =~ /(agave|bam-client|jito-solana)/([^/]+)$ ]]; then
+    if [[ "$CURRENT_TARGET" =~ /(agave|bam-client|jito-solana|harmonic)/([^/]+)$ ]]; then
       echo "${BASH_REMATCH[2]}"
     fi
   fi
@@ -44,7 +44,7 @@ if [[ "$VERSION" == "list" ]]; then
   if [[ -L "$ACTIVE" || -d "$ACTIVE" ]]; then
     CURRENT_TARGET="$(readlink -f "$ACTIVE" || true)"
     # Extract version from path like /home/sol/releases/agave/v3.0.10 or /home/sol/releases/bam-client/v3.0.10-bam_patch1
-    if [[ "$CURRENT_TARGET" =~ /(agave|bam-client|jito-solana)/([^/]+)$ ]]; then
+    if [[ "$CURRENT_TARGET" =~ /(agave|bam-client|jito-solana|harmonic)/([^/]+)$ ]]; then
       CURRENT_VERSION="${BASH_REMATCH[2]}"
     fi
   fi
@@ -56,7 +56,7 @@ if [[ "$VERSION" == "list" ]]; then
   found_any=false
 
   # Check each package type
-  for app_name in agave bam-client jito-solana; do
+  for app_name in agave bam-client jito-solana harmonic; do
     releases_dir="$BASE_DIR/$app_name"
 
     if [[ -d "$releases_dir" ]]; then
@@ -98,11 +98,13 @@ if [[ "$VERSION" == *"bam"* ]]; then
   APP_NAME="bam-client"
 elif [[ "$VERSION" == *"jito"* ]]; then
   APP_NAME="jito-solana"
+elif [[ "$VERSION" == *"harmonic"* ]]; then
+  APP_NAME="harmonic"
 elif [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   APP_NAME="agave"
 else
   echo "ERROR: unable to determine package type from version: $VERSION" >&2
-  echo "       Expected formats: v3.0.10-bam_patch1 | v3.0.10-jito | v3.0.10" >&2
+  echo "       Expected formats: v3.0.10-bam_patch1 | v3.0.10-jito | v3.0.10-harmonic | v3.0.10" >&2
   exit 1
 fi
 
@@ -119,7 +121,7 @@ if [[ -L "$ACTIVE" || -d "$ACTIVE" ]]; then
   CURRENT_TARGET="$(readlink -f "$ACTIVE" || true)"
 
   # Extract version from path like /home/sol/releases/agave/v3.0.10 or /home/sol/releases/bam-client/v3.0.10-bam_patch1
-  if [[ "$CURRENT_TARGET" =~ /(agave|bam-client|jito-solana)/([^/]+)$ ]]; then
+  if [[ "$CURRENT_TARGET" =~ /(agave|bam-client|jito-solana|harmonic)/([^/]+)$ ]]; then
     CURRENT_VERSION="${BASH_REMATCH[2]}"
     echo "Active version: $CURRENT_VERSION"
   fi

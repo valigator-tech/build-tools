@@ -14,7 +14,7 @@ if [[ "$CLUSTER" == "list" ]]; then
   found_any=false
 
   # Check each package type
-  for app_name in agave bam-client jito-solana; do
+  for app_name in agave bam-client jito-solana harmonic; do
     artifact_dir="$BASE_DIR/$app_name/artifacts"
 
     if [[ -d "$artifact_dir" ]]; then
@@ -61,6 +61,10 @@ if [[ "$TAG" == *"bam"* ]]; then
 elif [[ "$TAG" == *"jito"* ]]; then
   echo "Building a Agave-Jito client."
   APP_NAME="jito-solana"
+
+elif [[ "$TAG" == *"harmonic"* ]]; then
+  echo "Deploying a Harmonic client."
+  APP_NAME="harmonic"
 
 elif [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "Building a vanilla Agave client."
