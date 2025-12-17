@@ -1,0 +1,79 @@
+---
+# Ansible Playbook: Pull and Deploy Validator Builds
+#
+# This playbook pulls build artifacts from the central artifact server
+# and optionally activates them on target hosts.
+#
+# Usage:
+#   # Use defaults from playbook
+#   ansible-playbook -i inventory.yml pull-and-deploy.yml
+#
+#   # Override app and version
+#   ansible-playbook -i inventory.yml pull-and-deploy.yml -e "app=agave version=v3.0.10"
+#
+#   # Use different artifact server
+#   ansible-playbook -i inventory.yml pull-and-deploy.yml -e "artifact_server=http://build-server:8080"
+#
+#   # Auto-activate after pulling
+#   ansible-playbook -i inventory.yml pull-and-deploy.yml -e "auto_activate=true"
+
+- name: Pull and Deploy Validator Builds
+  hosts: all
+  become: no
+  gather_facts: yes
+
+  vars:
+    # Default values (can be overridden via -e on command line)
+    app: agave
+    version: v3.0.10
+    # Artifact server URL is read from config file (can still be overridden via -e)
+    artifact_server: "{{ lookup('pipe', playbook_dir + '/../get-artifact-server-url.sh') }}"
+    auto_activate: false
+    pull_builds_path: "/tmp/pull-builds"
+    pull_builds_source: "{{ playbook_dir }}/../pull-builds"
+
+  tasks:
+    - name: Display deployment information
+      debug:
+        msg:
+          - "Deploying {{ app }} version {{ version }}"
+          - "Artifact server: {{ artifact_server }}"
+          - "Target host: {{ inventory_hostname }}"
+          - "Auto-activate: {{ auto_activate }}"
+
+    - name: Copy pull-builds script to target
+      copy:
+        src: "{{ pull_builds_source }}"
+        dest: "{{ pull_builds_path }}"
+        mode: '0755'
+
+    - name: Pull build artifact
+      shell: |
+        export ARTIFACT_SERVER="{{ artifact_server }}"
+        {{ pull_builds_path }} {{ app }} {{ version }}
+      register: pull_result
+      changed_when: "'Successfully installed' in pull_result.stdout"
+      failed_when: pull_result.rc != 0
+
+    - name: Display pull results
+      debug:
+        var: pull_result.stdout_lines
+
+    - name: Activate version
+      shell: |
+        cd /home/sol/releases
+        echo "y" | ./activate_agave.sh {{ version }}
+      register: activate_result
+      when: auto_activate | bool
+      changed_when: "'Done.' in activate_result.stdout"
+      failed_when: activate_result.rc != 0
+
+    - name: Display activation results
+      debug:
+        var: activate_result.stdout_lines
+      when: auto_activate | bool
+
+    - name: Show manual activation command
+      debug:
+        msg: "To activate: ssh {{ inventory_hostname }} 'cd /home/sol/releases && ./activate_agave.sh {{ version }}'"
+      when: not (auto_activate | bool)

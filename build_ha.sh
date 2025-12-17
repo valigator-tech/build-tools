@@ -154,3 +154,10 @@ echo
 echo "Done."
 echo "Staged directory: $STAGE_DIR"
 echo "Artifact:        $ARTIFACT_ROOT/$APP_NAME-$TAG.tar.gz"
+
+# Update artifact index
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$SCRIPT_DIR/generate-index.sh" ]]; then
+  echo ""
+  "$SCRIPT_DIR/generate-index.sh"
+fi

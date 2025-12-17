@@ -1,0 +1,48 @@
+---
+# Ansible Inventory File
+#
+# Define your validator hosts here, organized by cluster or function
+#
+# Usage:
+#   ansible-playbook -i inventory.yml pull-and-deploy.yml
+
+all:
+  vars:
+    ansible_user: sol
+    ansible_python_interpreter: /usr/bin/python3
+    # Artifact server URL is configured in ~/.env
+    # Can still be overridden per host/group or via -e on command line
+
+  children:
+    # Production clusters
+    production:
+      children:
+        cluster_c000:
+          hosts:
+            validator-c000-01:
+              ansible_host: 10.0.0.10
+            validator-c000-02:
+              ansible_host: 10.0.0.11
+
+        cluster_c001:
+          hosts:
+            validator-c001-01:
+              ansible_host: 10.0.1.10
+            validator-c001-02:
+              ansible_host: 10.0.1.11
+
+    # Test/staging environment
+    testing:
+      hosts:
+        validator-t001-01:
+          ansible_host: 10.0.99.10
+      # vars:
+      #   # Override artifact server for test cluster if needed
+      #   artifact_server: http://test-build-server:8080
+
+# Example host-specific overrides:
+# validator-c000-01:
+#   ansible_host: 10.0.0.10
+#   vars:
+#     app: agave
+#     version: v3.0.10

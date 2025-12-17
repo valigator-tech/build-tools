@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Configuration
+# Priority: 1) ARTIFACT_SERVER env var already set, 2) ~/.env, 3) default
+if [[ -z "${ARTIFACT_SERVER:-}" ]]; then
+  # Try to source ~/.env
+  if [[ -f "$HOME/.env" ]]; then
+    source "$HOME/.env"
+  fi
+
+  # Fall back to default if still not set
+  if [[ -z "${ARTIFACT_SERVER:-}" ]]; then
+    ARTIFACT_SERVER="http://localhost:8080"
+  fi
+fi
+
+BASE_DIR="/home/sol/releases"
+
+# Color output (if terminal supports it)
+if [[ -t 1 ]]; then
+  GREEN='\033[0;32m'
+  YELLOW='\033[1;33m'
+  RED='\033[0;31m'
+  BLUE='\033[0;34m'
+  NC='\033[0m' # No Color
+else
+  GREEN=''
+  YELLOW=''
+  RED=''
+  BLUE=''
+  NC=''
+fi
+
+usage() {
+  cat <<EOF
+Usage: pull-builds [COMMAND] [OPTIONS]
+
+Commands:
+  list                    List all available apps
+  <app> list             List all versions for a specific app
+  <app> <version>        Pull and install a specific version
+
+Examples:
+  pull-builds list
+  pull-builds agave list
+  pull-builds agave v3.0.10
+  pull-builds ha v0.1.7
+
+Environment Variables:
+  ARTIFACT_SERVER        URL of artifact server (default: http://localhost:8080)
+
+EOF
+  exit 1
+}
+
+fetch_index() {
+  local index_url="$ARTIFACT_SERVER/index.json"
+  local index_file
+  index_file=$(mktemp)
+
+  if ! curl -f -s "$index_url" -o "$index_file" 2>/dev/null; then
+    echo -e "${RED}ERROR: Failed to fetch index from $index_url${NC}" >&2
+    echo "Make sure the artifact server is running and accessible." >&2
+    rm -f "$index_file"
+    exit 1
+  fi
+
+  echo "$index_file"
+}
+
+list_apps() {
+  echo "Fetching available apps from $ARTIFACT_SERVER..."
+  echo ""
+
+  local index_file
+  index_file=$(fetch_index)
+
+  echo "Available apps:"
+  echo "==============="
+
+  # Parse JSON to get app names
+  local apps
+  apps=$(grep -o '"[^"]*":' "$index_file" | tr -d '":' | sort)
+
+  if [[ -z "$apps" ]]; then
+    echo "No apps found in artifact server."
+  else
+    while IFS= read -r app; do
+      echo "  • $app"
+    done <<< "$apps"
+  fi
+
+  rm -f "$index_file"
+  echo ""
+  echo "To list versions: pull-builds <app> list"
+}
+
+list_versions() {
+  local app="$1"
+  echo "Fetching available versions for '$app' from $ARTIFACT_SERVER..."
+  echo ""
+
+  local index_file
+  index_file=$(fetch_index)
+
+  # Extract versions array for this app
+  local versions
+  versions=$(grep -A 1000 "\"$app\":" "$index_file" | grep -o '"[^"]*"' | tr -d '"' | grep -v "^$app$" | head -n -1 2>/dev/null || true)
+
+  if [[ -z "$versions" ]]; then
+    echo -e "${RED}ERROR: App '$app' not found in artifact server${NC}" >&2
+    echo "" >&2
+    echo "Available apps:" >&2
+    grep -o '"[^"]*":' "$index_file" | tr -d '":' | while IFS= read -r available_app; do
+      echo "  • $available_app" >&2
+    done
+    rm -f "$index_file"
+    exit 1
+  fi
+
+  echo "Available versions for '$app':"
+  echo "================================"
+
+  # Check currently installed versions
+  local installed_dir="$BASE_DIR/$app"
+
+  while IFS= read -r version; do
+    if [[ -d "$installed_dir/$version" ]]; then
+      echo -e "  ${GREEN}✓${NC} $version ${YELLOW}(installed)${NC}"
+    else
+      echo "  • $version"
+    fi
+  done <<< "$versions"
+
+  rm -f "$index_file"
+  echo ""
+  echo "To install: pull-builds $app <version>"
+}
+
+pull_version() {
+  local app="$1"
+  local version="$2"
+
+  echo -e "${BLUE}>>> Pulling $app $version${NC}"
+  echo ""
+
+  # Verify version exists in index
+  local index_file
+  index_file=$(fetch_index)
+
+  local versions
+  versions=$(grep -A 1000 "\"$app\":" "$index_file" | grep -o '"[^"]*"' | tr -d '"' | grep -v "^$app$" | head -n -1 2>/dev/null || true)
+
+  if [[ -z "$versions" ]]; then
+    echo -e "${RED}ERROR: App '$app' not found in artifact server${NC}" >&2
+    rm -f "$index_file"
+    exit 1
+  fi
+
+  if ! echo "$versions" | grep -q "^${version}$"; then
+    echo -e "${RED}ERROR: Version '$version' not found for app '$app'${NC}" >&2
+    echo "" >&2
+    echo "Available versions:" >&2
+    echo "$versions" | while IFS= read -r v; do
+      echo "  • $v" >&2
+    done
+    rm -f "$index_file"
+    exit 1
+  fi
+
+  rm -f "$index_file"
+
+  # Check if already installed
+  local install_dir="$BASE_DIR/$app/$version"
+  if [[ -d "$install_dir" ]]; then
+    echo -e "${YELLOW}Version $version is already installed at $install_dir${NC}"
+    echo ""
+    echo "To reinstall, first remove: rm -rf $install_dir"
+    echo ""
+    echo -e "${GREEN}To activate this version:${NC}"
+    echo "  cd /home/sol/releases && ./activate_agave.sh $version"
+    exit 0
+  fi
+
+  # Download tarball
+  local tarball_name="$app-$version.tar.gz"
+  local tarball_url="$ARTIFACT_SERVER/$app/artifacts/$tarball_name"
+  local temp_dir
+  temp_dir=$(mktemp -d)
+  local tarball_path="$temp_dir/$tarball_name"
+
+  echo "Downloading from: $tarball_url"
+
+  if ! curl -f -L --progress-bar "$tarball_url" -o "$tarball_path"; then
+    echo -e "${RED}ERROR: Failed to download $tarball_url${NC}" >&2
+    rm -rf "$temp_dir"
+    exit 1
+  fi
+
+  echo -e "${GREEN}✓ Download complete${NC}"
+  echo ""
+
+  # Extract to releases directory
+  echo "Installing to: $install_dir"
+
+  mkdir -p "$BASE_DIR/$app"
+
+  if ! tar -xzf "$tarball_path" -C "$BASE_DIR/$app"; then
+    echo -e "${RED}ERROR: Failed to extract tarball${NC}" >&2
+    rm -rf "$temp_dir"
+    exit 1
+  fi
+
+  rm -rf "$temp_dir"
+
+  echo -e "${GREEN}✓ Installation complete${NC}"
+  echo ""
+  echo "=================================="
+  echo -e "${GREEN}Successfully installed $app $version${NC}"
+  echo "=================================="
+  echo ""
+  echo "Location: $install_dir"
+  echo ""
+  echo -e "${BLUE}To activate this version:${NC}"
+
+  # Detect activation script location
+  if [[ -f "/home/sol/releases/activate_agave.sh" ]]; then
+    echo "  cd /home/sol/releases && ./activate_agave.sh $version"
+  else
+    echo "  Run the appropriate activate script for this version"
+  fi
+  echo ""
+}
+
+# Main command parsing
+if [[ $# -eq 0 ]]; then
+  usage
+fi
+
+COMMAND="$1"
+
+case "$COMMAND" in
+  list)
+    list_apps
+    ;;
+
+  -h|--help|help)
+    usage
+    ;;
+
+  *)
+    # App-specific command
+    APP="$COMMAND"
+
+    if [[ $# -lt 2 ]]; then
+      echo -e "${RED}ERROR: Missing command for app '$APP'${NC}" >&2
+      echo "" >&2
+      usage
+    fi
+
+    SUBCOMMAND="$2"
+
+    case "$SUBCOMMAND" in
+      list)
+        list_versions "$APP"
+        ;;
+
+      *)
+        # Assume it's a version
+        VERSION="$SUBCOMMAND"
+        pull_version "$APP" "$VERSION"
+        ;;
+    esac
+    ;;
+esac
