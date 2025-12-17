@@ -5,6 +5,9 @@ set -euo pipefail
 #   ./build_agave.sh v3.0.10-bam_patch1
 #
 
+# Get script directory at the start, before any cd commands
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 TAG="${1:-}"
 
 if [ -z "$TAG" ]; then
@@ -120,9 +123,10 @@ echo "Staged directory: $STAGE_DIR"
 echo "Artifact:        $ARTIFACT_ROOT/$APP_NAME-$TAG.tar.gz"
 
 # Update artifact index
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo ">>> Updating artifact index..."
 if [[ -x "$SCRIPT_DIR/generate-index.sh" ]]; then
-  echo ""
-  "$SCRIPT_DIR/generate-index.sh"
+  "$SCRIPT_DIR/generate-index.sh" || echo "Warning: Failed to update index"
+else
+  echo "ERROR: generate-index.sh not found or not executable at $SCRIPT_DIR/generate-index.sh" >&2
 fi
 
