@@ -104,9 +104,9 @@ list_versions() {
   local index_file
   index_file=$(fetch_index)
 
-  # Extract versions array for this app
+  # Extract versions array for this app using proper JSON parsing
   local versions
-  versions=$(grep -A 1000 "\"$app\":" "$index_file" | grep -o '"[^"]*"' | tr -d '"' | grep -v "^$app$" | head -n -1 2>/dev/null || true)
+  versions=$(grep -o "\"$app\": \[.*\]" "$index_file" | sed 's/.*\[//; s/\].*//; s/"//g; s/,/\n/g' | tr -d ' ' | grep -v '^$' || true)
 
   if [[ -z "$versions" ]]; then
     echo -e "${RED}ERROR: App '$app' not found in artifact server${NC}" >&2
@@ -150,7 +150,7 @@ pull_version() {
   index_file=$(fetch_index)
 
   local versions
-  versions=$(grep -A 1000 "\"$app\":" "$index_file" | grep -o '"[^"]*"' | tr -d '"' | grep -v "^$app$" | head -n -1 2>/dev/null || true)
+  versions=$(grep -o "\"$app\": \[.*\]" "$index_file" | sed 's/.*\[//; s/\].*//; s/"//g; s/,/\n/g' | tr -d ' ' | grep -v '^$' || true)
 
   if [[ -z "$versions" ]]; then
     echo -e "${RED}ERROR: App '$app' not found in artifact server${NC}" >&2
