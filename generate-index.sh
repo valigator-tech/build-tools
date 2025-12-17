@@ -34,7 +34,7 @@ for app in "${APPS[@]}"; do
       version="${version%.tar.gz}"
       versions+=("$version")
     fi
-  done < <(find "$artifact_dir" -maxdepth 1 -name "$app-*.tar.gz" -type f 2>/dev/null | sort)
+  done < <(find "$artifact_dir" -maxdepth 1 -name "$app-*.tar.gz" -type f 2>/dev/null | sort -V)
 
   # Only add to JSON if we found versions
   if [[ ${#versions[@]} -gt 0 ]]; then
