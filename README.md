@@ -73,7 +73,7 @@ This toolkit supports building and deploying multiple validator-related applicat
 ./build_svf.sh v0.1.12
 ```
 
-Artifacts are stored in `work/<app>/artifacts/<app>-<version>.tar.gz`
+Artifacts are stored in `/var/www/build-artifacts/<app>/artifacts/<app>-<version>.tar.gz`
 
 ### 2A. Deploy via Push (Legacy Method)
 
@@ -203,17 +203,18 @@ build-tools/
 │   ├── pull-and-deploy.yml      # Main deployment playbook
 │   ├── inventory.yml            # Sample inventory
 │   └── README.md                # Ansible documentation
-└── work/                        # Build artifacts and staging
-    ├── index.json               # Artifact index for pull system
-    ├── agave/
-    │   ├── artifacts/           # Built tarballs
-    │   └── releases/            # Staged release directories
-    ├── bam-client/
-    ├── jito-solana/
-    ├── harmonic/
-    ├── ha/
-    ├── svf/
-    └── src/                     # Source code checkouts
+└── work/                        # Local source code checkouts
+
+/var/www/build-artifacts/        # Artifact storage (served by nginx)
+├── index.json                   # Artifact index for pull system
+├── agave/
+│   ├── artifacts/               # Built tarballs
+│   └── releases/                # Staged release directories
+├── bam-client/
+├── jito-solana/
+├── harmonic/
+├── ha/
+└── svf/
 ```
 
 ## Artifact Server Setup

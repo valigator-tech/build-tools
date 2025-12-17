@@ -4,7 +4,7 @@ set -euo pipefail
 # Generates index.json file listing all available artifacts
 # Output: work/index.json
 
-BASE_DIR="/home/sol/git/build-tools/work"
+BASE_DIR="/var/www/build-artifacts"
 OUTPUT_FILE="$BASE_DIR/index.json"
 
 # Apps to scan

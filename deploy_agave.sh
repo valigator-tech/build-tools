@@ -10,7 +10,7 @@ if [[ "$CLUSTER" == "list" ]]; then
   echo
 
   #BASE_DIR="/opt/valig-builds"
-  BASE_DIR="/home/sol/git/build-tools/work"
+  BASE_DIR="/var/www/build-artifacts"
   found_any=false
 
   # Check each package type
@@ -81,7 +81,7 @@ fi
 
 #APP_NAME="bam-client"
 #BASE_DIR="/opt/valig-builds"
-BASE_DIR="/home/sol/git/build-tools/work"
+BASE_DIR="/var/www/build-artifacts"
 
 ARTIFACT_ROOT="$BASE_DIR/$APP_NAME/artifacts"
 TARBALL="$ARTIFACT_ROOT/$APP_NAME-$TAG.tar.gz"

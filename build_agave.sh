@@ -41,7 +41,7 @@ fi
 #exit 1
 
 #BASE_DIR="/opt/valig-builds"
-BASE_DIR="/home/sol/git/build-tools/work"
+BASE_DIR="/var/www/build-artifacts"
 
 # Where we'll stage versioned releases and artifacts
 RELEASE_ROOT="$BASE_DIR/$APP_NAME/releases"

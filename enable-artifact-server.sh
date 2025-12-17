@@ -22,6 +22,33 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
     exit 1
 fi
 
+# Ensure artifact directory exists and migrate data if needed
+ARTIFACT_DIR="/var/www/build-artifacts"
+OLD_WORK_DIR="$SCRIPT_DIR/work"
+
+if [[ ! -d "$ARTIFACT_DIR" ]]; then
+    echo ">>> Creating artifact directory..."
+    sudo mkdir -p "$ARTIFACT_DIR"
+    sudo chown $USER:$USER "$ARTIFACT_DIR"
+    echo "✓ Created $ARTIFACT_DIR"
+fi
+
+# Migrate existing artifacts from old location if they exist
+if [[ -d "$OLD_WORK_DIR" ]] && [[ -n "$(ls -A "$OLD_WORK_DIR" 2>/dev/null)" ]]; then
+    echo ""
+    echo ">>> Found existing artifacts in $OLD_WORK_DIR"
+    echo "    Migrating to $ARTIFACT_DIR..."
+
+    # Copy all subdirectories and files
+    cp -an "$OLD_WORK_DIR"/* "$ARTIFACT_DIR/" 2>/dev/null || true
+
+    echo "✓ Migration complete"
+    echo ""
+    echo "Note: Old artifacts remain in $OLD_WORK_DIR"
+    echo "      You can safely remove them after verifying the migration."
+    echo ""
+fi
+
 # Generate index.json before enabling
 echo ">>> Generating artifact index..."
 "$SCRIPT_DIR/generate-index.sh"
