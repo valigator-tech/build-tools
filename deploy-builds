@@ -1,0 +1,397 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# deploy-builds - Unified deploy script for all app types
+#
+# Usage:
+#   deploy-builds list                        # List all apps with artifacts
+#   deploy-builds <app> list                  # List versions for specific app
+#   deploy-builds <app> <cluster> <tag>       # Deploy to cluster
+
+BASE_DIR="/var/www/build-artifacts"
+CLUSTERS_FILE="$BASE_DIR/clusters.sh"
+SSH_USER="${SSH_USER:-}"
+
+# Color output (if terminal supports it)
+if [[ -t 1 ]]; then
+  GREEN='\033[0;32m'
+  YELLOW='\033[1;33m'
+  RED='\033[0;31m'
+  BLUE='\033[0;34m'
+  NC='\033[0m' # No Color
+else
+  GREEN=''
+  YELLOW=''
+  RED=''
+  BLUE=''
+  NC=''
+fi
+
+usage() {
+  cat <<EOF
+Usage: deploy-builds [COMMAND] [OPTIONS]
+
+Commands:
+  list                          List all apps with available artifacts
+  <app> list                    List all versions for a specific app
+  <app> <cluster> <tag>         Deploy a version to a cluster
+
+Supported Apps:
+  agave                         Agave validator (auto-detects variant from tag)
+  ha                            Solana Validator HA
+  svf                           Solana Validator Failover
+
+Clusters:
+  c000, c001, c002, c003        Production clusters
+  t001                          Testing cluster
+
+Examples:
+  deploy-builds list
+  deploy-builds agave list
+  deploy-builds agave c000 v3.0.10
+  deploy-builds agave c001 v3.0.10-jito
+  deploy-builds ha c000 v0.1.7
+  deploy-builds svf t001 v0.1.12
+
+Environment Variables:
+  SSH_USER                      Override SSH username (default: current user)
+
+EOF
+  exit 1
+}
+
+# List all apps that have artifacts
+list_apps() {
+  echo "Available apps with artifacts:"
+  echo "==============================="
+  echo ""
+
+  local found_any=false
+
+  # Check all app types
+  for app_name in agave bam-client jito-solana harmonic ha svf; do
+    local artifact_dir="$BASE_DIR/$app_name/artifacts"
+
+    if [[ -d "$artifact_dir" ]]; then
+      local count
+      count=$(find "$artifact_dir" -maxdepth 1 -name "$app_name-*.tar.gz" -type f 2>/dev/null | wc -l)
+
+      if [[ $count -gt 0 ]]; then
+        found_any=true
+        echo -e "  ${BLUE}$app_name${NC}  ($count version(s))"
+      fi
+    fi
+  done
+
+  if [[ "$found_any" == false ]]; then
+    echo "No artifacts found. Run compile-builds first to create packages."
+    exit 0
+  fi
+
+  echo ""
+  echo "Usage: deploy-builds <app> list     # List versions for an app"
+  echo "       deploy-builds <app> <cluster> <tag>  # Deploy to cluster"
+}
+
+# Detect app name from agave tag pattern
+detect_agave_app_name() {
+  local tag="$1"
+
+  if [[ "$tag" == *"bam"* ]]; then
+    echo "bam-client"
+  elif [[ "$tag" == *"jito"* ]]; then
+    echo "jito-solana"
+  elif [[ "$tag" == *"harmonic"* ]]; then
+    echo "harmonic"
+  elif [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "agave"
+  else
+    echo ""
+  fi
+}
+
+# List versions for a specific app
+list_versions() {
+  local app="$1"
+
+  echo "Available versions for '$app':"
+  echo "================================"
+  echo ""
+
+  # For agave, show all variants
+  if [[ "$app" == "agave" ]]; then
+    local found_any=false
+
+    for app_name in agave bam-client jito-solana harmonic; do
+      local artifact_dir="$BASE_DIR/$app_name/artifacts"
+
+      if [[ -d "$artifact_dir" ]]; then
+        local packages=()
+        while IFS= read -r -d '' file; do
+          local basename_file
+          basename_file=$(basename "$file")
+          local tag="${basename_file#$app_name-}"
+          tag="${tag%.tar.gz}"
+          packages+=("$tag")
+        done < <(find "$artifact_dir" -maxdepth 1 -name "$app_name-*.tar.gz" -type f -print0 2>/dev/null | sort -zV)
+
+        if [[ ${#packages[@]} -gt 0 ]]; then
+          found_any=true
+          echo "[$app_name]"
+          for tag in "${packages[@]}"; do
+            echo "  - $tag"
+          done
+          echo ""
+        fi
+      fi
+    done
+
+    if [[ "$found_any" == false ]]; then
+      echo "No agave packages found. Run 'compile-builds agave <tag>' first."
+    fi
+  else
+    # For ha/svf, show just that app
+    local artifact_dir="$BASE_DIR/$app/artifacts"
+
+    if [[ ! -d "$artifact_dir" ]]; then
+      echo -e "${RED}ERROR: No artifacts directory found for '$app'${NC}" >&2
+      exit 1
+    fi
+
+    local packages=()
+    while IFS= read -r -d '' file; do
+      local basename_file
+      basename_file=$(basename "$file")
+      local tag="${basename_file#$app-}"
+      tag="${tag%.tar.gz}"
+      packages+=("$tag")
+    done < <(find "$artifact_dir" -maxdepth 1 -name "$app-*.tar.gz" -type f -print0 2>/dev/null | sort -zV)
+
+    if [[ ${#packages[@]} -gt 0 ]]; then
+      echo "[$app]"
+      for tag in "${packages[@]}"; do
+        echo "  - $tag"
+      done
+      echo ""
+    else
+      echo "No packages found. Run 'compile-builds $app <tag>' first."
+    fi
+  fi
+
+  echo "Usage: deploy-builds $app <cluster> <tag>"
+}
+
+# List available clusters
+list_clusters() {
+  if [[ ! -f "$CLUSTERS_FILE" ]]; then
+    echo -e "${RED}ERROR: clusters file not found: $CLUSTERS_FILE${NC}" >&2
+    exit 1
+  fi
+
+  # Source to get cluster definitions
+  source "$CLUSTERS_FILE"
+
+  echo "Available clusters:"
+  for var in $(compgen -v | grep '^CLUSTER_'); do
+    local cluster_name="${var#CLUSTER_}"
+    declare -n arr="$var"
+    echo "  $cluster_name: ${arr[*]}"
+  done
+}
+
+# Deploy to a cluster
+deploy_to_cluster() {
+  local app="$1"
+  local cluster="$2"
+  local tag="$3"
+
+  # Determine the actual app name (for agave, auto-detect from tag)
+  local app_name
+  if [[ "$app" == "agave" ]]; then
+    app_name=$(detect_agave_app_name "$tag")
+    if [[ -z "$app_name" ]]; then
+      echo -e "${RED}ERROR: Unable to determine app type from tag '$tag'${NC}" >&2
+      echo "" >&2
+      echo "Expected tag patterns:" >&2
+      echo "  - v3.0.10          -> vanilla agave" >&2
+      echo "  - v3.0.10-jito     -> jito-solana" >&2
+      echo "  - v3.0.10-bam*     -> bam-client" >&2
+      echo "  - v3.0.10-harmonic -> harmonic" >&2
+      exit 1
+    fi
+    echo -e "${BLUE}>>> Detected app type: $app_name${NC}"
+  else
+    app_name="$app"
+  fi
+
+  local artifact_root="$BASE_DIR/$app_name/artifacts"
+  local tarball="$artifact_root/$app_name-$tag.tar.gz"
+  local remote_release_root="/home/sol/releases/$app_name"
+
+  # Check clusters file
+  if [[ ! -f "$CLUSTERS_FILE" ]]; then
+    echo -e "${RED}ERROR: clusters file not found: $CLUSTERS_FILE${NC}" >&2
+    exit 1
+  fi
+
+  # Source cluster definitions
+  # shellcheck source=/var/www/build-artifacts/clusters.sh
+  source "$CLUSTERS_FILE"
+
+  # Build variable name like CLUSTER_c000
+  local var_name="CLUSTER_${cluster}"
+
+  # Ensure the cluster array exists
+  if ! declare -p "$var_name" &>/dev/null; then
+    echo -e "${RED}ERROR: unknown cluster '$cluster' (no $var_name in $CLUSTERS_FILE)${NC}" >&2
+    echo "" >&2
+    echo "Available clusters:" >&2
+    for var in $(compgen -v | grep '^CLUSTER_'); do
+      local cname="${var#CLUSTER_}"
+      echo "  - $cname" >&2
+    done
+    exit 1
+  fi
+
+  # Name reference to access cluster array
+  declare -n cluster_arr="$var_name"
+  local hosts=("${cluster_arr[@]}")
+
+  if [[ ${#hosts[@]} -eq 0 ]]; then
+    echo -e "${RED}ERROR: cluster '$cluster' has no hosts defined${NC}" >&2
+    exit 1
+  fi
+
+  # Check artifact exists
+  if [[ ! -f "$tarball" ]]; then
+    echo -e "${RED}ERROR: artifact not found: $tarball${NC}" >&2
+    echo "Did you run 'compile-builds $app $tag'?" >&2
+    exit 1
+  fi
+
+  echo -e "${BLUE}>>> Deploying $app_name tag $tag to cluster $cluster: ${hosts[*]}${NC}"
+  echo ">>> Using artifact: $tarball"
+  echo ""
+
+  # Ensure base directory structure exists on all hosts
+  echo "Ensuring base directory structure exists on remote hosts..."
+  for host in "${hosts[@]}"; do
+    local target="$host"
+    if [[ -n "$SSH_USER" ]]; then
+      target="$SSH_USER@$host"
+    fi
+
+    ssh "$target" "mkdir -p '$remote_release_root'" || {
+      echo -e "${RED}ERROR: Failed to create directory on $target${NC}" >&2
+      exit 1
+    }
+  done
+
+  # Check which hosts already have the version
+  echo "Checking if version already exists on remote hosts..."
+  local hosts_to_deploy=()
+  for host in "${hosts[@]}"; do
+    local target="$host"
+    if [[ -n "$SSH_USER" ]]; then
+      target="$SSH_USER@$host"
+    fi
+
+    if ssh "$target" "test -d '$remote_release_root/$tag'" 2>/dev/null; then
+      echo -e "  ${YELLOW}x${NC} $target: Version $tag already exists (skipping)"
+    else
+      echo -e "  ${GREEN}+${NC} $target: Version $tag not found (will deploy)"
+      hosts_to_deploy+=("$host")
+    fi
+  done
+
+  if [[ ${#hosts_to_deploy[@]} -eq 0 ]]; then
+    echo ""
+    echo -e "${YELLOW}All hosts already have version $tag. Nothing to deploy.${NC}"
+    exit 0
+  fi
+
+  echo ""
+  echo "Deploying to ${#hosts_to_deploy[@]} host(s)..."
+  echo ""
+
+  for host in "${hosts_to_deploy[@]}"; do
+    local target="$host"
+    if [[ -n "$SSH_USER" ]]; then
+      target="$SSH_USER@$host"
+    fi
+
+    echo "==== Host: $target ===="
+
+    scp "$tarball" "$target:/tmp/"
+
+    ssh "$target" "cd '$remote_release_root' && \
+                   tar xzf /tmp/$app_name-$tag.tar.gz && \
+                   rm /tmp/$app_name-$tag.tar.gz"
+
+    echo ""
+  done
+
+  echo -e "${GREEN}>>> Done deploying $app_name $tag to cluster $cluster${NC}"
+}
+
+# Main command parsing
+if [[ $# -eq 0 ]]; then
+  usage
+fi
+
+COMMAND="$1"
+
+case "$COMMAND" in
+  list)
+    list_apps
+    ;;
+
+  -h|--help|help)
+    usage
+    ;;
+
+  agave|ha|svf)
+    APP="$COMMAND"
+
+    if [[ $# -lt 2 ]]; then
+      echo -e "${RED}ERROR: Missing command for app '$APP'${NC}" >&2
+      echo "" >&2
+      usage
+    fi
+
+    SUBCOMMAND="$2"
+
+    case "$SUBCOMMAND" in
+      list)
+        list_versions "$APP"
+        ;;
+
+      clusters)
+        list_clusters
+        ;;
+
+      *)
+        # Expect <cluster> <tag>
+        if [[ $# -lt 3 ]]; then
+          echo -e "${RED}ERROR: Missing tag for deployment${NC}" >&2
+          echo "" >&2
+          echo "Usage: deploy-builds $APP <cluster> <tag>" >&2
+          exit 1
+        fi
+
+        CLUSTER="$2"
+        TAG="$3"
+        deploy_to_cluster "$APP" "$CLUSTER" "$TAG"
+        ;;
+    esac
+    ;;
+
+  *)
+    echo -e "${RED}ERROR: Unknown app '$COMMAND'${NC}" >&2
+    echo "" >&2
+    echo "Available apps: agave, ha, svf" >&2
+    echo "" >&2
+    echo "Use 'deploy-builds list' to see all options." >&2
+    exit 1
+    ;;
+esac
