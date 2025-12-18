@@ -52,7 +52,12 @@ if [[ "$VERSION" == "list" ]]; then
       if [[ "$basename_dir" != "solana-validator-failover" ]]; then
         versions+=("$basename_dir")
       fi
-    done < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null | sort -z)
+    done < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+
+    # Sort versions using version sort
+    if [[ ${#versions[@]} -gt 0 ]]; then
+      mapfile -t versions < <(printf '%s\n' "${versions[@]}" | sort -V)
+    fi
 
     # Display versions if any found
     if [[ ${#versions[@]} -gt 0 ]]; then
