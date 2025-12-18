@@ -60,6 +60,9 @@ EOF
   exit 1
 }
 
+# Agave fork names (for aggregating counts)
+AGAVE_FORKS="agave bam-client jito-solana harmonic"
+
 # List all apps that have artifacts
 list_apps() {
   echo "Available apps with artifacts:"
@@ -68,8 +71,23 @@ list_apps() {
 
   local found_any=false
 
-  # Check all app types
-  for app_name in agave bam-client jito-solana harmonic ha svf; do
+  # Check agave (aggregate all forks)
+  local agave_count=0
+  for fork in $AGAVE_FORKS; do
+    local artifact_dir="$BASE_DIR/$fork/artifacts"
+    if [[ -d "$artifact_dir" ]]; then
+      local count
+      count=$(find "$artifact_dir" -maxdepth 1 -name "$fork-*.tar.gz" -type f 2>/dev/null | wc -l)
+      agave_count=$((agave_count + count))
+    fi
+  done
+  if [[ $agave_count -gt 0 ]]; then
+    found_any=true
+    echo -e "  ${BLUE}agave${NC}  ($agave_count version(s) across all forks)"
+  fi
+
+  # Check ha and svf
+  for app_name in ha svf; do
     local artifact_dir="$BASE_DIR/$app_name/artifacts"
 
     if [[ -d "$artifact_dir" ]]; then
@@ -118,11 +136,11 @@ list_versions() {
   echo "================================"
   echo ""
 
-  # For agave, show all variants
+  # For agave, show all forks
   if [[ "$app" == "agave" ]]; then
     local found_any=false
 
-    for app_name in agave bam-client jito-solana harmonic; do
+    for app_name in $AGAVE_FORKS; do
       local artifact_dir="$BASE_DIR/$app_name/artifacts"
 
       if [[ -d "$artifact_dir" ]]; then
