@@ -4,16 +4,24 @@ Build, distribution, and deployment system for Solana validator software with bo
 
 ## Overview
 
-This toolkit supports building and deploying multiple validator-related applications:
+This toolkit manages three application types:
 
-| Application | Description | Build Method |
-|-------------|-------------|--------------|
-| **agave** | Vanilla Anza Agave validator | Build from source |
-| **bam-client** | Jito BAM client variant | Build from source |
-| **jito-solana** | Jito Solana variant | Build from source |
-| **harmonic** | Harmonic proposer variant | Build from source |
-| **ha** | High Availability tool | Download pre-built |
-| **svf** | Solana Validator Failover tool | Download pre-built |
+| App | Description | Build Method |
+|-----|-------------|--------------|
+| **agave** | Solana validator (Anza Agave and forks) | Build from source |
+| **ha** | Solana Validator HA (high availability) | Download pre-built binary |
+| **svf** | Solana Validator Failover | Download pre-built binary |
+
+### Agave Forks
+
+The `agave` application type supports multiple forks, automatically detected from the version tag:
+
+| Fork | Tag Pattern | Repository |
+|------|-------------|------------|
+| Vanilla Agave | `v3.0.10` | anza-xyz/agave |
+| Jito Solana | `v3.0.10-jito` | jito-foundation/jito-solana |
+| BAM Client | `v3.0.10-bam*` | jito-labs/bam-client |
+| Harmonic | `v3.0.10-harmonic` | meijilabs/proposer |
 
 ## Quick Start
 
@@ -95,15 +103,11 @@ Build or download application artifacts.
 | Command | Description |
 |---------|-------------|
 | `compile-builds list` | List all buildable applications |
-| `compile-builds agave <tag>` | Build Agave variant (auto-detects type from tag) |
+| `compile-builds agave <tag>` | Build Agave or fork (fork auto-detected from tag pattern) |
 | `compile-builds ha <tag>` | Download HA binary from GitHub releases |
 | `compile-builds svf <tag>` | Download SVF binary from GitHub releases |
 
-**Tag patterns for Agave variants:**
-- `v3.0.10` → vanilla agave
-- `v3.0.10-jito` → jito-solana
-- `v3.0.10-bam*` → bam-client
-- `v3.0.10-harmonic` → harmonic
+See [Agave Forks](#agave-forks) for tag patterns.
 
 ### deploy-builds
 
