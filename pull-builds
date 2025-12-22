@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# pull-builds - Pull and install artifacts from artifact server
+#
+# Usage:
+#   pull-builds list              # List all available apps
+#   pull-builds <app> list        # List all versions for an app
+#   pull-builds <app> <version>   # Pull and install a specific version
+
 # Configuration
 # Priority: 1) ARTIFACT_SERVER env var already set, 2) ~/.env, 3) default
 if [[ -z "${ARTIFACT_SERVER:-}" ]]; then
@@ -16,6 +23,9 @@ if [[ -z "${ARTIFACT_SERVER:-}" ]]; then
 fi
 
 BASE_DIR="/home/sol/releases"
+
+# Agave fork app names (used internally for artifact paths)
+AGAVE_FORKS="agave bam-client jito-solana harmonic"
 
 # Color output (if terminal supports it)
 if [[ -t 1 ]]; then
@@ -41,17 +51,47 @@ Commands:
   <app> list             List all versions for a specific app
   <app> <version>        Pull and install a specific version
 
+Supported Apps:
+  agave                   Solana validator (includes all forks)
+  ha                      Solana Validator HA
+  svf                     Solana Validator Failover
+
+Agave Forks (auto-detected from version tag):
+  v3.0.10                 Vanilla Agave
+  v3.0.10-jito            Jito Solana
+  v3.0.10-bam*            BAM Client
+  v3.0.10-harmonic        Harmonic
+
 Examples:
   pull-builds list
   pull-builds agave list
   pull-builds agave v3.0.10
+  pull-builds agave v3.0.10-jito
   pull-builds ha v0.1.7
+  pull-builds svf v0.1.12
 
 Environment Variables:
   ARTIFACT_SERVER        URL of artifact server (default: http://localhost:8080)
 
 EOF
   exit 1
+}
+
+# Detect agave fork from version tag
+detect_agave_fork() {
+  local version="$1"
+
+  if [[ "$version" == *"bam"* ]]; then
+    echo "bam-client"
+  elif [[ "$version" == *"jito"* ]]; then
+    echo "jito-solana"
+  elif [[ "$version" == *"harmonic"* ]]; then
+    echo "harmonic"
+  elif [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "agave"
+  else
+    echo ""
+  fi
 }
 
 fetch_index() {
@@ -79,17 +119,26 @@ list_apps() {
   echo "Available apps:"
   echo "==============="
 
-  # Parse JSON to get app names
-  local apps
-  apps=$(grep -o '"[^"]*":' "$index_file" | tr -d '":' | sort)
-
-  if [[ -z "$apps" ]]; then
-    echo "No apps found in artifact server."
-  else
-    while IFS= read -r app; do
-      echo "  • $app"
-    done <<< "$apps"
-  fi
+  # Only show the three main app types
+  for app in agave ha svf; do
+    if [[ "$app" == "agave" ]]; then
+      # Check if any agave fork has versions
+      local has_versions=false
+      for fork in $AGAVE_FORKS; do
+        if grep -q "\"$fork\":" "$index_file" 2>/dev/null; then
+          has_versions=true
+          break
+        fi
+      done
+      if [[ "$has_versions" == true ]]; then
+        echo "  • agave"
+      fi
+    else
+      if grep -q "\"$app\":" "$index_file" 2>/dev/null; then
+        echo "  • $app"
+      fi
+    fi
+  done
 
   rm -f "$index_file"
   echo ""
@@ -104,34 +153,66 @@ list_versions() {
   local index_file
   index_file=$(fetch_index)
 
-  # Extract versions array for this app using proper JSON parsing
-  local versions
-  versions=$(grep -o "\"$app\": \[.*\]" "$index_file" | sed 's/.*\[//; s/\].*//; s/"//g; s/,/\n/g' | tr -d ' ' | grep -v '^$' || true)
+  if [[ "$app" == "agave" ]]; then
+    # Aggregate versions from all agave forks
+    echo "Available versions for 'agave' (all forks):"
+    echo "============================================="
 
-  if [[ -z "$versions" ]]; then
-    echo -e "${RED}ERROR: App '$app' not found in artifact server${NC}" >&2
-    echo "" >&2
-    echo "Available apps:" >&2
-    grep -o '"[^"]*":' "$index_file" | tr -d '":' | while IFS= read -r available_app; do
-      echo "  • $available_app" >&2
+    local found_any=false
+
+    for fork in $AGAVE_FORKS; do
+      local versions
+      versions=$(grep -o "\"$fork\": \[.*\]" "$index_file" | sed 's/.*\[//; s/\].*//; s/"//g; s/,/\n/g' | tr -d ' ' | grep -v '^$' || true)
+
+      if [[ -n "$versions" ]]; then
+        found_any=true
+        echo ""
+        echo "[$fork]"
+
+        # Check installed versions for this fork
+        local installed_dir="$BASE_DIR/$fork"
+
+        while IFS= read -r version; do
+          if [[ -d "$installed_dir/$version" ]]; then
+            echo -e "  ${GREEN}✓${NC} $version ${YELLOW}(installed)${NC}"
+          else
+            echo "  • $version"
+          fi
+        done <<< "$versions"
+      fi
     done
-    rm -f "$index_file"
-    exit 1
-  fi
 
-  echo "Available versions for '$app':"
-  echo "================================"
-
-  # Check currently installed versions
-  local installed_dir="$BASE_DIR/$app"
-
-  while IFS= read -r version; do
-    if [[ -d "$installed_dir/$version" ]]; then
-      echo -e "  ${GREEN}✓${NC} $version ${YELLOW}(installed)${NC}"
-    else
-      echo "  • $version"
+    if [[ "$found_any" == false ]]; then
+      echo -e "${RED}ERROR: No agave versions found in artifact server${NC}" >&2
+      rm -f "$index_file"
+      exit 1
     fi
-  done <<< "$versions"
+  else
+    # ha or svf - simple version list
+    local versions
+    versions=$(grep -o "\"$app\": \[.*\]" "$index_file" | sed 's/.*\[//; s/\].*//; s/"//g; s/,/\n/g' | tr -d ' ' | grep -v '^$' || true)
+
+    if [[ -z "$versions" ]]; then
+      echo -e "${RED}ERROR: App '$app' not found in artifact server${NC}" >&2
+      echo "" >&2
+      echo "Available apps: agave, ha, svf" >&2
+      rm -f "$index_file"
+      exit 1
+    fi
+
+    echo "Available versions for '$app':"
+    echo "================================"
+
+    local installed_dir="$BASE_DIR/$app"
+
+    while IFS= read -r version; do
+      if [[ -d "$installed_dir/$version" ]]; then
+        echo -e "  ${GREEN}✓${NC} $version ${YELLOW}(installed)${NC}"
+      else
+        echo "  • $version"
+      fi
+    done <<< "$versions"
+  fi
 
   rm -f "$index_file"
   echo ""
@@ -142,7 +223,26 @@ pull_version() {
   local app="$1"
   local version="$2"
 
-  echo -e "${BLUE}>>> Pulling $app $version${NC}"
+  # Determine actual app name (for agave, detect fork from version)
+  local actual_app="$app"
+  if [[ "$app" == "agave" ]]; then
+    actual_app=$(detect_agave_fork "$version")
+    if [[ -z "$actual_app" ]]; then
+      echo -e "${RED}ERROR: Unable to determine agave fork from version '$version'${NC}" >&2
+      echo "" >&2
+      echo "Expected tag patterns:" >&2
+      echo "  v3.0.10          -> vanilla agave" >&2
+      echo "  v3.0.10-jito     -> jito-solana" >&2
+      echo "  v3.0.10-bam*     -> bam-client" >&2
+      echo "  v3.0.10-harmonic -> harmonic" >&2
+      exit 1
+    fi
+    if [[ "$actual_app" != "agave" ]]; then
+      echo -e "${BLUE}>>> Detected fork: $actual_app${NC}"
+    fi
+  fi
+
+  echo -e "${BLUE}>>> Pulling $actual_app $version${NC}"
   echo ""
 
   # Verify version exists in index
@@ -150,16 +250,16 @@ pull_version() {
   index_file=$(fetch_index)
 
   local versions
-  versions=$(grep -o "\"$app\": \[.*\]" "$index_file" | sed 's/.*\[//; s/\].*//; s/"//g; s/,/\n/g' | tr -d ' ' | grep -v '^$' || true)
+  versions=$(grep -o "\"$actual_app\": \[.*\]" "$index_file" | sed 's/.*\[//; s/\].*//; s/"//g; s/,/\n/g' | tr -d ' ' | grep -v '^$' || true)
 
   if [[ -z "$versions" ]]; then
-    echo -e "${RED}ERROR: App '$app' not found in artifact server${NC}" >&2
+    echo -e "${RED}ERROR: App '$actual_app' not found in artifact server${NC}" >&2
     rm -f "$index_file"
     exit 1
   fi
 
   if ! echo "$versions" | grep -q "^${version}$"; then
-    echo -e "${RED}ERROR: Version '$version' not found for app '$app'${NC}" >&2
+    echo -e "${RED}ERROR: Version '$version' not found for '$actual_app'${NC}" >&2
     echo "" >&2
     echo "Available versions:" >&2
     echo "$versions" | while IFS= read -r v; do
@@ -172,20 +272,20 @@ pull_version() {
   rm -f "$index_file"
 
   # Check if already installed
-  local install_dir="$BASE_DIR/$app/$version"
+  local install_dir="$BASE_DIR/$actual_app/$version"
   if [[ -d "$install_dir" ]]; then
     echo -e "${YELLOW}Version $version is already installed at $install_dir${NC}"
     echo ""
     echo "To reinstall, first remove: rm -rf $install_dir"
     echo ""
     echo -e "${GREEN}To activate this version:${NC}"
-    echo "  cd /home/sol/releases && ./activate_agave.sh $version"
+    echo "  activate-builds $app $version"
     exit 0
   fi
 
   # Download tarball
-  local tarball_name="$app-$version.tar.gz"
-  local tarball_url="$ARTIFACT_SERVER/$app/artifacts/$tarball_name"
+  local tarball_name="$actual_app-$version.tar.gz"
+  local tarball_url="$ARTIFACT_SERVER/$actual_app/artifacts/$tarball_name"
   local temp_dir
   temp_dir=$(mktemp -d)
   local tarball_path="$temp_dir/$tarball_name"
@@ -204,9 +304,9 @@ pull_version() {
   # Extract to releases directory
   echo "Installing to: $install_dir"
 
-  mkdir -p "$BASE_DIR/$app"
+  mkdir -p "$BASE_DIR/$actual_app"
 
-  if ! tar -xzf "$tarball_path" -C "$BASE_DIR/$app"; then
+  if ! tar -xzf "$tarball_path" -C "$BASE_DIR/$actual_app"; then
     echo -e "${RED}ERROR: Failed to extract tarball${NC}" >&2
     rm -rf "$temp_dir"
     exit 1
@@ -217,19 +317,13 @@ pull_version() {
   echo -e "${GREEN}✓ Installation complete${NC}"
   echo ""
   echo "=================================="
-  echo -e "${GREEN}Successfully installed $app $version${NC}"
+  echo -e "${GREEN}Successfully installed $actual_app $version${NC}"
   echo "=================================="
   echo ""
   echo "Location: $install_dir"
   echo ""
   echo -e "${BLUE}To activate this version:${NC}"
-
-  # Detect activation script location
-  if [[ -f "/home/sol/releases/activate_agave.sh" ]]; then
-    echo "  cd /home/sol/releases && ./activate_agave.sh $version"
-  else
-    echo "  Run the appropriate activate script for this version"
-  fi
+  echo "  activate-builds $app $version"
   echo ""
 }
 
@@ -249,8 +343,7 @@ case "$COMMAND" in
     usage
     ;;
 
-  *)
-    # App-specific command
+  agave|ha|svf)
     APP="$COMMAND"
 
     if [[ $# -lt 2 ]]; then
@@ -272,5 +365,14 @@ case "$COMMAND" in
         pull_version "$APP" "$VERSION"
         ;;
     esac
+    ;;
+
+  *)
+    echo -e "${RED}ERROR: Unknown app '$COMMAND'${NC}" >&2
+    echo "" >&2
+    echo "Available apps: agave, ha, svf" >&2
+    echo "" >&2
+    echo "Use 'pull-builds list' to see available apps." >&2
+    exit 1
     ;;
 esac

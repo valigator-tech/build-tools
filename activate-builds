@@ -1,0 +1,744 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# activate-builds - Unified activation script for all app types
+#
+# Usage:
+#   activate-builds list                     # List all apps
+#   activate-builds <app> list               # List installed versions
+#   activate-builds <app> version            # Show current active version
+#   activate-builds <app> type               # Show current type (agave only)
+#   activate-builds <app> <version>          # Activate specific version
+
+BASE_DIR="/home/sol/releases"
+
+# Color output (if terminal supports it)
+if [[ -t 1 ]]; then
+  GREEN='\033[0;32m'
+  YELLOW='\033[1;33m'
+  RED='\033[0;31m'
+  BLUE='\033[0;34m'
+  NC='\033[0m' # No Color
+else
+  GREEN=''
+  YELLOW=''
+  RED=''
+  BLUE=''
+  NC=''
+fi
+
+usage() {
+  cat <<EOF
+Usage: activate-builds [COMMAND] [OPTIONS]
+
+Commands:
+  list                          List all apps
+  <app> list                    List all installed versions for an app
+  <app> version                 Show current active version
+  <app> type                    Show current type (agave variants only)
+  <app> <version>               Activate a specific version
+
+Supported Apps:
+  agave                         Agave validator (auto-detects variant from tag)
+  ha                            Solana Validator HA
+  svf                           Solana Validator Failover
+
+Examples:
+  activate-builds list
+  activate-builds agave list
+  activate-builds agave version
+  activate-builds agave v3.0.10
+  activate-builds agave v3.0.10-jito
+  activate-builds ha list
+  activate-builds ha v0.1.7
+  activate-builds svf v0.1.12
+
+EOF
+  exit 1
+}
+
+# List all available apps
+list_apps() {
+  echo "Available apps for activation:"
+  echo "==============================="
+  echo ""
+  echo -e "  ${BLUE}agave${NC}      - Agave validator and variants"
+  echo "               Symlink: $BASE_DIR/active -> <version dir>"
+  echo ""
+  echo -e "  ${BLUE}ha${NC}         - Solana Validator HA"
+  echo "               Symlink: $BASE_DIR/solana-validator-ha -> <binary>"
+  echo ""
+  echo -e "  ${BLUE}svf${NC}        - Solana Validator Failover"
+  echo "               Symlink: $BASE_DIR/solana-validator-failover -> <binary>"
+  echo ""
+  echo "Usage: activate-builds <app> list"
+}
+
+# Detect app name from agave version tag
+detect_agave_app_name() {
+  local version="$1"
+
+  if [[ "$version" == *"bam"* ]]; then
+    echo "bam-client"
+  elif [[ "$version" == *"jito"* ]]; then
+    echo "jito-solana"
+  elif [[ "$version" == *"harmonic"* ]]; then
+    echo "harmonic"
+  elif [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "agave"
+  else
+    echo ""
+  fi
+}
+
+# List installed versions for agave
+list_agave_versions() {
+  local active="$BASE_DIR/active"
+  local current_version=""
+
+  if [[ -L "$active" || -d "$active" ]]; then
+    local current_target
+    current_target="$(readlink -f "$active" 2>/dev/null || true)"
+    if [[ "$current_target" =~ /(agave|bam-client|jito-solana|harmonic)/([^/]+)$ ]]; then
+      current_version="${BASH_REMATCH[2]}"
+    fi
+  fi
+
+  echo "Available agave versions for activation:"
+  echo "========================================="
+  echo ""
+
+  local found_any=false
+
+  for app_name in agave bam-client jito-solana harmonic; do
+    local releases_dir="$BASE_DIR/$app_name"
+
+    if [[ -d "$releases_dir" ]]; then
+      local versions=()
+      while IFS= read -r -d '' dir; do
+        local basename_dir
+        basename_dir=$(basename "$dir")
+        if [[ "$basename_dir" != "active" ]]; then
+          versions+=("$basename_dir")
+        fi
+      done < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+
+      # Sort versions
+      if [[ ${#versions[@]} -gt 0 ]]; then
+        mapfile -t versions < <(printf '%s\n' "${versions[@]}" | sort -V)
+      fi
+
+      if [[ ${#versions[@]} -gt 0 ]]; then
+        found_any=true
+        echo "[$app_name]"
+        for version in "${versions[@]}"; do
+          if [[ -n "$current_version" && "$version" == "$current_version" ]]; then
+            echo -e "  - $version ${GREEN}(active)${NC}"
+          else
+            echo "  - $version"
+          fi
+        done
+        echo ""
+      fi
+    fi
+  done
+
+  if [[ "$found_any" == false ]]; then
+    echo "No versions found. Deploy packages first."
+  fi
+}
+
+# List installed versions for ha
+list_ha_versions() {
+  local active="$BASE_DIR/solana-validator-ha"
+  local current_version=""
+
+  if [[ -L "$active" ]]; then
+    local current_target
+    current_target="$(readlink -f "$active" 2>/dev/null || true)"
+    if [[ "$current_target" =~ /ha/([^/]+)/ ]]; then
+      current_version="${BASH_REMATCH[1]}"
+    fi
+  fi
+
+  echo "Available HA versions for activation:"
+  echo "======================================"
+  echo ""
+
+  local releases_dir="$BASE_DIR/ha"
+
+  if [[ -d "$releases_dir" ]]; then
+    local versions=()
+    while IFS= read -r -d '' dir; do
+      local basename_dir
+      basename_dir=$(basename "$dir")
+      if [[ "$basename_dir" != "solana-validator-ha" ]]; then
+        versions+=("$basename_dir")
+      fi
+    done < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+
+    # Sort versions
+    if [[ ${#versions[@]} -gt 0 ]]; then
+      mapfile -t versions < <(printf '%s\n' "${versions[@]}" | sort -V)
+    fi
+
+    if [[ ${#versions[@]} -gt 0 ]]; then
+      echo "[ha]"
+      for version in "${versions[@]}"; do
+        if [[ -n "$current_version" && "$version" == "$current_version" ]]; then
+          echo -e "  - $version ${GREEN}(active)${NC}"
+        else
+          echo "  - $version"
+        fi
+      done
+      echo ""
+    else
+      echo "No versions found. Deploy packages first."
+    fi
+  else
+    echo "No versions found. Deploy packages first."
+  fi
+}
+
+# List installed versions for svf
+list_svf_versions() {
+  local active="$BASE_DIR/solana-validator-failover"
+  local current_version=""
+
+  if [[ -L "$active" ]]; then
+    local current_target
+    current_target="$(readlink -f "$active" 2>/dev/null || true)"
+    if [[ "$current_target" =~ /svf/([^/]+)/ ]]; then
+      current_version="${BASH_REMATCH[1]}"
+    fi
+  fi
+
+  echo "Available SVF versions for activation:"
+  echo "======================================="
+  echo ""
+
+  local releases_dir="$BASE_DIR/svf"
+
+  if [[ -d "$releases_dir" ]]; then
+    local versions=()
+    while IFS= read -r -d '' dir; do
+      local basename_dir
+      basename_dir=$(basename "$dir")
+      if [[ "$basename_dir" != "solana-validator-failover" ]]; then
+        versions+=("$basename_dir")
+      fi
+    done < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+
+    # Sort versions
+    if [[ ${#versions[@]} -gt 0 ]]; then
+      mapfile -t versions < <(printf '%s\n' "${versions[@]}" | sort -V)
+    fi
+
+    if [[ ${#versions[@]} -gt 0 ]]; then
+      echo "[svf]"
+      for version in "${versions[@]}"; do
+        if [[ -n "$current_version" && "$version" == "$current_version" ]]; then
+          echo -e "  - $version ${GREEN}(active)${NC}"
+        else
+          echo "  - $version"
+        fi
+      done
+      echo ""
+    else
+      echo "No versions found. Deploy packages first."
+    fi
+  else
+    echo "No versions found. Deploy packages first."
+  fi
+}
+
+# Show current active version for agave
+show_agave_version() {
+  local active="$BASE_DIR/active"
+  if [[ -L "$active" || -d "$active" ]]; then
+    local current_target
+    current_target="$(readlink -f "$active" 2>/dev/null || true)"
+    if [[ "$current_target" =~ /(agave|bam-client|jito-solana|harmonic)/([^/]+)$ ]]; then
+      echo "${BASH_REMATCH[2]}"
+    fi
+  fi
+}
+
+# Show current active type for agave
+show_agave_type() {
+  local active="$BASE_DIR/active"
+  if [[ -L "$active" || -d "$active" ]]; then
+    local current_target
+    current_target="$(readlink -f "$active" 2>/dev/null || true)"
+    if [[ "$current_target" =~ /(agave|bam-client|jito-solana|harmonic)/([^/]+)$ ]]; then
+      echo "${BASH_REMATCH[1]}"
+    fi
+  fi
+}
+
+# Show current active version for ha
+show_ha_version() {
+  local active="$BASE_DIR/solana-validator-ha"
+  if [[ -L "$active" ]]; then
+    local current_target
+    current_target="$(readlink -f "$active" 2>/dev/null || true)"
+    if [[ "$current_target" =~ /ha/([^/]+)/ ]]; then
+      echo "${BASH_REMATCH[1]}"
+    fi
+  fi
+}
+
+# Show current active version for svf
+show_svf_version() {
+  local active="$BASE_DIR/solana-validator-failover"
+  if [[ -L "$active" ]]; then
+    local current_target
+    current_target="$(readlink -f "$active" 2>/dev/null || true)"
+    if [[ "$current_target" =~ /svf/([^/]+)/ ]]; then
+      echo "${BASH_REMATCH[1]}"
+    fi
+  fi
+}
+
+# Activate agave version
+activate_agave() {
+  local version="$1"
+
+  # Detect app type from version tag
+  local app_name
+  app_name=$(detect_agave_app_name "$version")
+
+  if [[ -z "$app_name" ]]; then
+    echo -e "${RED}ERROR: Unable to determine package type from version: $version${NC}" >&2
+    echo "Expected formats: v3.0.10 | v3.0.10-jito | v3.0.10-bam* | v3.0.10-harmonic" >&2
+    exit 1
+  fi
+
+  local root="$BASE_DIR/$app_name"
+  local active="$BASE_DIR/active"
+  local target="$root/$version"
+
+  # Show current active version
+  echo "=== Current active $app_name ==="
+
+  local current_target=""
+  local current_version=""
+  if [[ -L "$active" || -d "$active" ]]; then
+    current_target="$(readlink -f "$active" 2>/dev/null || true)"
+
+    if [[ "$current_target" =~ /(agave|bam-client|jito-solana|harmonic)/([^/]+)$ ]]; then
+      current_version="${BASH_REMATCH[2]}"
+      echo "Active version: $current_version"
+    fi
+
+    echo "active -> ${current_target:-$active}"
+
+    local current_solana_bin="$active/bin/solana"
+    if [[ -x "$current_solana_bin" ]]; then
+      echo ""
+      echo "Current: $current_solana_bin --version"
+      echo "--------------------------------------"
+      "$current_solana_bin" --version || echo "(failed to run current solana --version)"
+      echo "--------------------------------------"
+    else
+      echo -e "${YELLOW}WARNING: $current_solana_bin not found or not executable${NC}"
+    fi
+  else
+    echo "No active version"
+  fi
+
+  echo ""
+
+  # Inspect requested version
+  if [[ ! -d "$target" ]]; then
+    echo -e "${RED}ERROR: version directory not found: $target${NC}" >&2
+    exit 1
+  fi
+
+  local new_solana_bin="$target/bin/solana"
+  if [[ ! -x "$new_solana_bin" ]]; then
+    echo -e "${RED}ERROR: $new_solana_bin not found or not executable${NC}" >&2
+    exit 1
+  fi
+
+  echo "=== Candidate version to activate ==="
+  echo "Target directory: $target"
+  echo ""
+  echo "Checking: $new_solana_bin --version"
+  echo "--------------------------------------"
+
+  local new_version_output
+  if ! new_version_output="$("$new_solana_bin" --version 2>&1)"; then
+    echo -e "${RED}ERROR: solana --version failed for candidate:${NC}" >&2
+    echo "$new_version_output" >&2
+    echo "No changes made."
+    exit 1
+  fi
+
+  echo "$new_version_output"
+  echo "--------------------------------------"
+  echo ""
+
+  # Check if already active
+  if [[ -n "$current_target" && "$current_target" == "$target" ]]; then
+    echo -e "${RED}ERROR: Version $version is already active${NC}" >&2
+    echo "No changes needed."
+    exit 1
+  fi
+
+  # Ask user to confirm
+  read -r -p "Switch active $app_name to $version? [y/N] " REPLY
+  case "$REPLY" in
+    [yY]|[yY][eE][sS])
+      echo "Updating active symlink..."
+      ln -sfn "$target" "$active"
+      echo -e "${GREEN}Done.${NC}"
+      echo "  $active -> $(readlink -f "$active")"
+      ;;
+    *)
+      echo "Aborted. No changes made."
+      exit 1
+      ;;
+  esac
+}
+
+# Activate ha version
+activate_ha() {
+  local version="$1"
+
+  local root="$BASE_DIR/ha"
+  local active="$BASE_DIR/solana-validator-ha"
+  local version_dir="$root/$version"
+  local target_binary="$version_dir/bin/solana-validator-ha"
+
+  # Show current active version
+  echo "=== Current active HA ==="
+
+  local current_target=""
+  local current_version=""
+  if [[ -L "$active" ]]; then
+    current_target="$(readlink -f "$active" 2>/dev/null || true)"
+
+    if [[ "$current_target" =~ /ha/([^/]+)/ ]]; then
+      current_version="${BASH_REMATCH[1]}"
+      echo "Active version: $current_version"
+    fi
+
+    echo "solana-validator-ha -> ${current_target:-$active}"
+
+    if [[ -x "$active" ]]; then
+      echo ""
+      echo "Current: $active --version"
+      echo "--------------------------------------"
+      "$active" --version || echo "(failed to run current solana-validator-ha --version)"
+      echo "--------------------------------------"
+    else
+      echo -e "${YELLOW}WARNING: $active not found or not executable${NC}"
+    fi
+  elif [[ -e "$active" ]]; then
+    echo -e "${YELLOW}WARNING: $active exists but is not a symlink${NC}"
+  else
+    echo "No active version"
+  fi
+
+  echo ""
+
+  # Inspect requested version
+  if [[ ! -d "$version_dir" ]]; then
+    echo -e "${RED}ERROR: version directory not found: $version_dir${NC}" >&2
+    exit 1
+  fi
+
+  if [[ ! -x "$target_binary" ]]; then
+    echo -e "${RED}ERROR: $target_binary not found or not executable${NC}" >&2
+    exit 1
+  fi
+
+  echo "=== Candidate version to activate ==="
+  echo "Target binary: $target_binary"
+  echo ""
+  echo "Checking: $target_binary --version"
+  echo "--------------------------------------"
+
+  local new_version_output
+  if ! new_version_output="$("$target_binary" --version 2>&1)"; then
+    echo -e "${RED}ERROR: solana-validator-ha --version failed for candidate:${NC}" >&2
+    echo "$new_version_output" >&2
+    echo "No changes made."
+    exit 1
+  fi
+
+  echo "$new_version_output"
+  echo "--------------------------------------"
+  echo ""
+
+  # Check if already active
+  if [[ -n "$current_target" && "$current_target" == "$target_binary" ]]; then
+    echo -e "${RED}ERROR: Version $version is already active${NC}" >&2
+    echo "No changes needed."
+    exit 1
+  fi
+
+  # Ask user to confirm
+  read -r -p "Switch active HA to $version? [y/N] " REPLY
+  case "$REPLY" in
+    [yY]|[yY][eE][sS])
+      echo "Updating active symlink..."
+      ln -sfn "$target_binary" "$active"
+      echo -e "${GREEN}Done.${NC}"
+      echo "  $active -> $(readlink -f "$active")"
+      ;;
+    *)
+      echo "Aborted. No changes made."
+      exit 1
+      ;;
+  esac
+}
+
+# Activate svf version
+activate_svf() {
+  local version="$1"
+
+  local root="$BASE_DIR/svf"
+  local active="$BASE_DIR/solana-validator-failover"
+  local version_dir="$root/$version"
+  local target_binary="$version_dir/bin/solana-validator-failover"
+
+  # Show current active version
+  echo "=== Current active SVF ==="
+
+  local current_target=""
+  local current_version=""
+  if [[ -L "$active" ]]; then
+    current_target="$(readlink -f "$active" 2>/dev/null || true)"
+
+    if [[ "$current_target" =~ /svf/([^/]+)/ ]]; then
+      current_version="${BASH_REMATCH[1]}"
+      echo "Active version: $current_version"
+    fi
+
+    echo "solana-validator-failover -> ${current_target:-$active}"
+
+    if [[ -x "$active" ]]; then
+      echo ""
+      echo "Current: $active --version"
+      echo "--------------------------------------"
+      "$active" --version || echo "(failed to run current solana-validator-failover --version)"
+      echo "--------------------------------------"
+    else
+      echo -e "${YELLOW}WARNING: $active not found or not executable${NC}"
+    fi
+  elif [[ -e "$active" ]]; then
+    echo -e "${YELLOW}WARNING: $active exists but is not a symlink${NC}"
+  else
+    echo "No active version"
+  fi
+
+  echo ""
+
+  # Inspect requested version
+  if [[ ! -d "$version_dir" ]]; then
+    echo -e "${RED}ERROR: version directory not found: $version_dir${NC}" >&2
+    exit 1
+  fi
+
+  if [[ ! -x "$target_binary" ]]; then
+    echo -e "${RED}ERROR: $target_binary not found or not executable${NC}" >&2
+    exit 1
+  fi
+
+  echo "=== Candidate version to activate ==="
+  echo "Target binary: $target_binary"
+  echo ""
+  echo "Checking: $target_binary --version"
+  echo "--------------------------------------"
+
+  local new_version_output
+  if ! new_version_output="$("$target_binary" --version 2>&1)"; then
+    echo -e "${RED}ERROR: solana-validator-failover --version failed for candidate:${NC}" >&2
+    echo "$new_version_output" >&2
+    echo "No changes made."
+    exit 1
+  fi
+
+  echo "$new_version_output"
+  echo "--------------------------------------"
+  echo ""
+
+  # Check if already active
+  if [[ -n "$current_target" && "$current_target" == "$target_binary" ]]; then
+    echo -e "${RED}ERROR: Version $version is already active${NC}" >&2
+    echo "No changes needed."
+    exit 1
+  fi
+
+  # Ask user to confirm
+  read -r -p "Switch active SVF to $version? [y/N] " REPLY
+  case "$REPLY" in
+    [yY]|[yY][eE][sS])
+      echo "Updating active symlink..."
+      ln -sfn "$target_binary" "$active"
+      echo -e "${GREEN}Done.${NC}"
+      echo "  $active -> $(readlink -f "$active")"
+      echo ""
+
+      # Check system-wide symlinks
+      local system_bin_link="/usr/local/bin/solana-validator-failover"
+      local system_bin_svf="/usr/local/bin/svf"
+
+      echo "=== Checking system-wide symlinks ==="
+
+      # Check solana-validator-failover
+      if [[ -L "$system_bin_link" ]]; then
+        local system_target
+        system_target="$(readlink "$system_bin_link")"
+        if [[ "$system_target" == "$active" ]]; then
+          echo -e "${GREEN}OK${NC} $system_bin_link -> $active"
+        else
+          echo -e "${YELLOW}WARNING: $system_bin_link points to wrong target${NC}" >&2
+          echo "  Current: $system_bin_link -> $system_target" >&2
+          echo "  Expected: $system_bin_link -> $active" >&2
+          echo "" >&2
+          echo "To fix, run as root:" >&2
+          echo "  ln -sf $active $system_bin_link" >&2
+          echo "  ln -sf $active $system_bin_svf" >&2
+        fi
+      elif [[ -e "$system_bin_link" ]]; then
+        echo -e "${RED}ERROR: $system_bin_link exists but is not a symlink${NC}" >&2
+        echo "  It should point to: $active" >&2
+      else
+        echo -e "${YELLOW}WARNING: $system_bin_link does not exist${NC}" >&2
+        echo "  To create, run as root:" >&2
+        echo "  ln -sf $active $system_bin_link" >&2
+        echo "  ln -sf $active $system_bin_svf" >&2
+      fi
+
+      # Check svf alias
+      if [[ -L "$system_bin_svf" ]]; then
+        local system_svf_target
+        system_svf_target="$(readlink "$system_bin_svf")"
+        if [[ "$system_svf_target" == "$active" ]]; then
+          echo -e "${GREEN}OK${NC} $system_bin_svf -> $active"
+        else
+          echo -e "${YELLOW}WARNING: $system_bin_svf points to wrong target${NC}" >&2
+          echo "  Current: $system_bin_svf -> $system_svf_target" >&2
+          echo "  Expected: $system_bin_svf -> $active" >&2
+        fi
+      elif [[ -e "$system_bin_svf" ]]; then
+        echo -e "${YELLOW}WARNING: $system_bin_svf exists but is not a symlink${NC}" >&2
+      else
+        echo -e "${YELLOW}WARNING: $system_bin_svf does not exist${NC}" >&2
+      fi
+      ;;
+    *)
+      echo "Aborted. No changes made."
+      exit 1
+      ;;
+  esac
+}
+
+# Main command parsing
+if [[ $# -eq 0 ]]; then
+  usage
+fi
+
+COMMAND="$1"
+
+case "$COMMAND" in
+  list)
+    list_apps
+    ;;
+
+  -h|--help|help)
+    usage
+    ;;
+
+  agave)
+    if [[ $# -lt 2 ]]; then
+      echo -e "${RED}ERROR: Missing command for app 'agave'${NC}" >&2
+      echo "" >&2
+      usage
+    fi
+
+    SUBCOMMAND="$2"
+
+    case "$SUBCOMMAND" in
+      list)
+        list_agave_versions
+        ;;
+      version)
+        show_agave_version
+        ;;
+      type)
+        show_agave_type
+        ;;
+      *)
+        # Assume it's a version to activate
+        activate_agave "$SUBCOMMAND"
+        ;;
+    esac
+    ;;
+
+  ha)
+    if [[ $# -lt 2 ]]; then
+      echo -e "${RED}ERROR: Missing command for app 'ha'${NC}" >&2
+      echo "" >&2
+      usage
+    fi
+
+    SUBCOMMAND="$2"
+
+    case "$SUBCOMMAND" in
+      list)
+        list_ha_versions
+        ;;
+      version)
+        show_ha_version
+        ;;
+      type)
+        echo -e "${YELLOW}Note: 'type' command is only applicable to agave variants${NC}"
+        echo "ha"
+        ;;
+      *)
+        # Assume it's a version to activate
+        activate_ha "$SUBCOMMAND"
+        ;;
+    esac
+    ;;
+
+  svf)
+    if [[ $# -lt 2 ]]; then
+      echo -e "${RED}ERROR: Missing command for app 'svf'${NC}" >&2
+      echo "" >&2
+      usage
+    fi
+
+    SUBCOMMAND="$2"
+
+    case "$SUBCOMMAND" in
+      list)
+        list_svf_versions
+        ;;
+      version)
+        show_svf_version
+        ;;
+      type)
+        echo -e "${YELLOW}Note: 'type' command is only applicable to agave variants${NC}"
+        echo "svf"
+        ;;
+      *)
+        # Assume it's a version to activate
+        activate_svf "$SUBCOMMAND"
+        ;;
+    esac
+    ;;
+
+  *)
+    echo -e "${RED}ERROR: Unknown app '$COMMAND'${NC}" >&2
+    echo "" >&2
+    echo "Available apps: agave, ha, svf" >&2
+    echo "" >&2
+    echo "Use 'activate-builds list' to see all options." >&2
+    exit 1
+    ;;
+esac
