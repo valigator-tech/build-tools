@@ -37,6 +37,9 @@ Commands:
   list                    List all buildable apps
   <app> <tag>            Build/download a specific version
 
+Options:
+  -f, --force             Force update of existing tags (clobber)
+
 Supported Apps:
   agave                   Agave validator (auto-detects variant from tag)
                           - v3.0.10          -> vanilla agave
@@ -165,7 +168,11 @@ build_agave_variant() {
     echo ">>> Repo exists, updating"
     cd "$src_dir"
     git config --global --add safe.directory "$src_dir"
-    git fetch --tags origin
+    if [[ "$FORCE" == "true" ]]; then
+      git fetch --tags --force origin
+    else
+      git fetch --tags origin
+    fi
   else
     echo ">>> Cloning fresh repo"
     git clone --recurse-submodules "$repo_url" "$src_dir"
@@ -531,6 +538,20 @@ update_index() {
     echo -e "${RED}ERROR: generate-index.sh not found or not executable at $SCRIPT_DIR/generate-index.sh${NC}" >&2
   fi
 }
+
+# Parse global options
+FORCE=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -f|--force)
+      FORCE=true
+      shift
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 
 # Main command parsing
 if [[ $# -eq 0 ]]; then
